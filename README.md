@@ -5,6 +5,18 @@ health, and edit album tags in one desktop application.
 
 **Version 1.0.0** is the first public release.
 
+## Screenshots
+
+Screenshots from version 1.1.0-beta.1 on Windows.
+
+**Browse your music library** — explore artists and albums with their artwork.
+
+![Artist library with artwork, search and library health tools](docs/screenshots/artist-library.png)
+
+**Find artwork** — search online and choose an image for an artist or album.
+
+![Artwork search showing image choices for a-ha](docs/screenshots/find-artwork.png)
+
 ## Features
 
 - Browse artists and albums with a local SQLite index and thumbnail cache.
