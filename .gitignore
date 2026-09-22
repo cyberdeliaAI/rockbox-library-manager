@@ -1,0 +1,22 @@
+# Python and local environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Local settings, credentials and library caches
+.env
+.env.*
+*credentials*.json
+artwork_gui_config.json
+*.sqlite3*
+artwork_gui_thumbs/
+artist-art-cache.json
+album-art-cache.json
+
+# Generated packages and operating-system files
+dist/
+*.zip
+.DS_Store
+Thumbs.db
