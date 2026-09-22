@@ -5,6 +5,11 @@ health, and edit album tags in one desktop application.
 
 **Version 1.0.0** is the first public release.
 
+**Version 1.1.0-beta.1** adds **Settings → Rockbox database…** for previewing tag
+updates to an existing iPod index, making verified local backups and restoring
+them. This is experimental until tested on the player; see the
+[database update and recovery guide](docs/rockbox-database.md).
+
 ## Features
 
 - Browse artists and albums with a local SQLite index and thumbnail cache.
@@ -21,7 +26,7 @@ health, and edit album tags in one desktop application.
 
 ## Install and run
 
-Download the ZIP from [Releases](https://github.com/cyberdeliaAI/rockbox-library-manager/releases/latest)
+Download the ZIP from [Releases](https://github.com/cyberdeliaAI/rockbox-library-manager/releases)
 and extract it, or clone this repository. Open a terminal in the extracted folder.
 Python 3.10 or later, including Tk, is required.
 
