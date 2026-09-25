@@ -1,3 +1,3 @@
 """Rockbox Library Manager core package."""
 
-__version__ = "1.1.0-beta.1"
+__version__ = "1.1.0-beta.2"

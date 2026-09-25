@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.0-beta.2
+
+- Fix database previews for PodBox paths such as `/<HDD0>/Music/...`, mapping
+  the internal volume to the connected iPod on Windows, macOS and Linux.
+- Preserve the original database path and its volume prefix, including after
+  recorded folder moves. Refuse other volumes, ambiguous aliases and paths
+  that could escape the device or access a Windows alternate data stream.
+- Include prominent credits to Anthony Fletcher and PodBox, the original
+  artwork source references, and the full GNU GPL v2 license.
+
 ## 1.1.0-beta.1
 
 - Preview updates to existing Rockbox database records after editing music tags.

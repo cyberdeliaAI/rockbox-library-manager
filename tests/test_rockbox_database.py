@@ -5,7 +5,7 @@ import shutil
 import struct
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from unittest.mock import patch
 
 from mutagen.flac import FLAC
@@ -23,8 +23,9 @@ def make_device(base: Path, endian="<", paths=None):
     tracks = []
     values = []
     for i, path in enumerate(paths):
-        if path.startswith("/Music/") and ".." not in path:
-            track = device / path.lstrip("/")
+        local_path = path.removeprefix("/<HDD0>")
+        if local_path.startswith("/Music/") and ".." not in local_path:
+            track = device / local_path.lstrip("/")
             track.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(Path(__file__).parent / "fixtures/silence.flac", track)
             audio = FLAC(track)
@@ -171,6 +172,77 @@ class DatabaseTests(unittest.TestCase):
         db = rb.TagDatabase.parse(rb.snapshot(self.device))
         self.assertEqual(db.text(db.rows[0], 4), "/Music/Canonical Artist/Album/01.flac")
         self.assertEqual(db.texts[4][db.rows[0][4]][1], 0)
+
+    def test_hdd0_preview_apply_restore_preserve_paths_and_runtime(self):
+        paths = ["/<HDD0>/Music/Old Artist/Album/01.flac", "/<HDD0>/Music/Other/Album/02.flac"]
+        for endian in ("<", ">"):
+            with self.subTest(endian=endian):
+                device, tracks = make_device(self.base / ("little" if endian == "<" else "big"), endian=endian, paths=paths)
+                before = rb.snapshot(device)
+                unchanged = rb.preview_update(device / "Music")
+                self.assertEqual(unchanged.checked_tracks, 2)
+                self.assertEqual(unchanged.changed_tracks, 0)
+                self.assertEqual(unchanged.after, before)
+                audio = FLAC(tracks[0]); audio["album"] = ["Updated Album"]; audio.save()
+                music_bytes = tracks[0].read_bytes()
+                plan = rb.preview_update(device / "Music")
+                self.assertEqual(plan.changed_tracks, 1)
+                self.assertEqual(plan.after["database_4.tcd"], before["database_4.tcd"])
+                backup = rb.apply_update(plan, self.backups)
+                self.assertEqual(rb.read_backup(backup)[1], before)
+                db = rb.TagDatabase.parse(rb.snapshot(device))
+                self.assertEqual(db.text(db.rows[0], 1), "Updated Album")
+                self.assertEqual([db.text(row, 4) for row in db.rows if not row[23] & 1], paths)
+                old_rows = list(struct.iter_unpack(endian + "24i", before[rb.MASTER][24:]))
+                self.assertEqual([row[13:] for row in db.rows], [list(row[13:]) for row in old_rows])
+                self.assertEqual(tracks[0].read_bytes(), music_bytes)
+                rb.restore_backup(device, backup, self.backups)
+                self.assertEqual(rb.snapshot(device), {n: b for n, b in before.items() if n != rb.STATE})
+
+    def test_hdd0_recorded_move_preserves_volume_and_reverse_indices(self):
+        paths = ["/<HDD0>/Music/Old Artist/Album/01.flac", "/Music/Other/Album/02.flac"]
+        device, _ = make_device(self.base / "volume-move", paths=paths)
+        source = device / "Music/Old Artist"
+        destination = device / "Music/New Artist"
+        source.rename(destination)
+        plan = rb.preview_update(device / "Music", moves=[[str(source), str(destination)]])
+        self.assertEqual(plan.changed_tracks, 1)
+        rb.apply_update(plan, self.backups)
+        db = rb.TagDatabase.parse(rb.snapshot(device))
+        self.assertEqual(db.text(db.rows[0], 4), "/<HDD0>/Music/New Artist/Album/01.flac")
+        self.assertEqual(db.text(db.rows[1], 4), paths[1])
+        for i in (0, 1):
+            self.assertEqual(db.texts[4][db.rows[i][4]][1], i)
+
+    def test_volume_aliases_cannot_update_the_same_file_twice(self):
+        device, _ = make_device(self.base / "aliases", paths=[
+            "/<HDD0>/Music/Old Artist/Album/01.flac", "/Music/Old Artist/Album/01.flac"])
+        before = rb.snapshot(device)
+        with self.assertRaisesRegex(rb.DatabaseError, "same local file"):
+            rb.preview_update(device / "Music")
+        self.assertEqual(rb.snapshot(device), before)
+        self.assertFalse(self.backups.exists())
+
+    def test_volume_mapping_stays_on_windows_device_and_rejects_unsafe_paths(self):
+        prefix, parts = rb._split_device_path("/<HDD0>/Music/Artist/Album/01.flac")
+        self.assertEqual(prefix, "/<HDD0>")
+        self.assertEqual(PureWindowsPath("D:/").joinpath(*parts), PureWindowsPath("D:/Music/Artist/Album/01.flac"))
+        for name in ["/<HDD1>/Music/01.flac", "/<microSD0>/Music/01.flac", "/<HDD0>",
+                     "/<HDD0>/../outside.flac", "/<HDD0>/Music/../../outside.flac",
+                     "/<HDD0>/E:/Music/01.flac", "/<HDD0>/Music/01.flac:stream",
+                     "/<HDD0>/Music/\\outside.flac", "//<HDD0>/Music/01.flac",
+                     "/<HDD0>/<HDD0>/Music/01.flac", "/<HDD0>/Music/\0.flac"]:
+            with self.subTest(path=name), self.assertRaises(rb.DatabaseError):
+                rb._device_path(self.device, name)
+
+    def test_hdd0_symlink_cannot_escape_device(self):
+        link = self.music / "outside"
+        try:
+            link.symlink_to(self.base, target_is_directory=True)
+        except OSError:
+            self.skipTest("Symlinks unavailable")
+        with self.assertRaisesRegex(rb.DatabaseError, "escapes"):
+            rb._device_path(self.device, "/<HDD0>/Music/outside/private.flac")
 
     def test_missing_track_or_multivalue_tags_abort_preview(self):
         before = rb.snapshot(self.device)

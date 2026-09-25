@@ -358,11 +358,30 @@ def _stamp(path: Path) -> tuple[int, int]:
     return s.st_size, s.st_mtime_ns
 
 
-def _device_path(device: Path, name: str) -> Path:
+def _split_device_path(name: str) -> tuple[str, tuple[str, ...]]:
+    """Separate PodBox's internal-volume label from a device-relative path.
+
+    Rockbox names ATA volume zero <HDD0> (firmware/export/mv.h). Accept only
+    that known alias; another volume must never be mapped to this mounted iPod.
+    Keep the prefix so a recorded folder move retains the database's spelling.
+    """
     p = PurePosixPath(name)
-    if len(p.parts) < 2 or not name.startswith("/") or name.startswith("//") or ".." in p.parts or "\\" in name or "<" in p.parts[1]:
+    if len(p.parts) < 2 or not name.startswith("/") or name.startswith("//") or ".." in p.parts or "\\" in name or "\0" in name:
         raise DatabaseError(f"Unsupported device path: {name}")
-    path = device.joinpath(*p.parts[1:])
+    parts = p.parts[1:]
+    prefix = ""
+    if parts[0] == "<HDD0>":
+        prefix, parts = "/<HDD0>", parts[1:]
+    # Colons can introduce a Windows drive or alternate data stream. Reject
+    # them on every host, as well as unknown or nested volume specifiers.
+    if not parts or any(any(c in part for c in "<>:") for part in parts):
+        raise DatabaseError(f"Unsupported device path: {name}")
+    return prefix, parts
+
+
+def _device_path(device: Path, name: str) -> Path:
+    _, parts = _split_device_path(name)
+    path = device.joinpath(*parts)
     if path.is_symlink() or not path.resolve().is_relative_to(device):
         raise DatabaseError(f"Device path escapes the iPod: {name}")
     return path
@@ -396,6 +415,7 @@ def preview_update(music_root: Path, *, moves: list[list[str]] | None = None,
             continue
         old_name = db.text(row, 4)
         path = _device_path(device, old_name)
+        original_path = path
         if not path.resolve().is_relative_to(music_root):
             continue
         # Only use moves explicitly recorded by this application. Never guess a
@@ -408,11 +428,13 @@ def preview_update(music_root: Path, *, moves: list[list[str]] | None = None,
                 path = dst / path.relative_to(src)
         if not path.resolve().is_relative_to(music_root) or not path.is_file():
             raise DatabaseError(f"Indexed track is missing: {old_name}. Use Rockbox's Update Now for unrecorded moves or deleted tracks.")
+        if path.resolve() in stamps:
+            raise DatabaseError(f"Multiple database records refer to the same local file: {old_name}. Update the database on the iPod first.")
         initial = _stamp(path)
         values = _metadata(path)
         if _stamp(path) != initial:
             raise DatabaseError(f"Tags changed while reading: {path.name}")
-        stamps[path] = initial
+        stamps[path.resolve()] = initial
         delta: dict[int, str | int] = {}
         for tag, key in FIELDS.items():
             if tag == 9:
@@ -431,8 +453,9 @@ def preview_update(music_root: Path, *, moves: list[list[str]] | None = None,
             canonical = values["artist"] or values["albumartist"] or "<Untagged>"
             if canonical != db.text(row, 12):
                 delta[12] = canonical
-        new_name = "/" + path.relative_to(device).as_posix()
-        if new_name != old_name:
+        if path != original_path:
+            prefix, _ = _split_device_path(old_name)
+            new_name = prefix + "/" + path.relative_to(device).as_posix()
             delta[4] = new_name
             descriptions.append(f"{old_name} → {new_name}")
         if delta:

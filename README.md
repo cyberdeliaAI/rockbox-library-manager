@@ -34,7 +34,8 @@ The full license is included in [LICENSE](LICENSE). See also
 
 **Version 1.0.0** is the first public release.
 
-**Version 1.1.0-beta.1** adds **Settings → Rockbox database…** for previewing tag
+**Version 1.1.0-beta.2** includes a fix for PodBox's `/<HDD0>/Music/...` database
+paths, including on Windows. It provides **Settings → Rockbox database…** for previewing tag
 updates to an existing iPod index, making verified local backups and restoring
 them. This is experimental until tested on the player; see the
 [database update and recovery guide](docs/rockbox-database.md).

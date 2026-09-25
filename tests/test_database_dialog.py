@@ -17,7 +17,10 @@ class DatabaseDialogTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(prefix="rockbox-db-ui-")
         self.addCleanup(self.tmp.cleanup)
         self.base = Path(self.tmp.name).resolve()
-        self.device, self.tracks = make_device(self.base)
+        self.device, self.tracks = make_device(self.base, paths=[
+            "/<HDD0>/Music/Old Artist/Album/01.flac",
+            "/<HDD0>/Music/Other/Album/02.flac",
+        ])
         for target, name, value in [(gui, "local_app_dir", self.base / "Config"),
                                     (gui.engine, "get_config_path", self.base / "Config/credentials.json")]:
             patcher = patch.object(target, name, return_value=value)

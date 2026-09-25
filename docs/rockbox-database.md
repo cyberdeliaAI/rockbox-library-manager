@@ -79,8 +79,16 @@ database editor against the mounted device during an update.
 The implementation supports the `TCH` version 16 format (`0x54434810`) in either
 byte order. Unknown versions, incomplete tables, pending commits, dirty master
 headers, unexpected files, invalid offsets, symlinks and unsupported paths stop
-the update. Non-default Rockbox database locations and multi-volume database
-paths are not supported.
+the update. Non-default Rockbox database locations are not supported.
+
+Since version **1.1.0-beta.2**, both `/Music/...` and PodBox's
+`/<HDD0>/Music/...` paths refer to the connected iPod's music folder (for example,
+`D:\Music\...` on Windows). `<HDD0>` is Rockbox's name for internal ATA volume
+zero; see the [volume definitions](https://github.com/anthonyfletcher/podbox/blob/master/firmware/export/mv.h)
+and [path handling](https://github.com/anthonyfletcher/podbox/blob/master/firmware/common/pathfuncs.c).
+The prefix is preserved in the database, including when applying recorded folder
+moves. Other volumes, nested volume labels, Windows drive/stream syntax and
+multiple database records that resolve to one local file are refused.
 
 The format contract is based on the official
 [tagcache implementation](https://github.com/Rockbox/rockbox/blob/master/apps/tagcache.c)
