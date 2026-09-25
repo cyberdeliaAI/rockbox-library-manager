@@ -2446,9 +2446,14 @@ class ArtworkApp:
                      justify="left", wraplength=420).pack(fill="x", pady=(1, 5))
 
     def open_media_tools(self) -> None:
-        root = self._valid_music_root(silent=False)
-        if root is None or self.operation_lock.locked():
+        if self.operation_lock.locked():
             return
+        root = self._valid_music_root(silent=True)
+        if root is None:
+            chosen = filedialog.askdirectory(title="Choose a folder to prepare for PodBox")
+            if not chosen:
+                return
+            root = Path(chosen)
         raw = self.output_size_var.get().strip()
         if not raw.isdigit() or not 64 <= int(raw) <= 2000:
             messagebox.showerror(APP_NAME, "Artwork size must be a whole number between 64 and 2000.")

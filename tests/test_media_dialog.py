@@ -115,6 +115,26 @@ class MediaDialogTests(unittest.TestCase):
         self.dialog.scan_btn.invoke(); self.wait()
         self.assertEqual(len(self.dialog.candidates), 2)
 
+    def test_choose_folder_scans_only_that_folder_without_changing_library(self):
+        with patch("rockbox_manager.media_dialog.filedialog.askdirectory", return_value=str(self.music / "Large")):
+            self.dialog.choose_folder()
+        self.wait()
+        self.assertEqual(self.dialog.music_root, self.music / "Large")
+        self.assertEqual([c.relative for c in self.dialog.candidates.values()], ["folder.jpg"])
+        self.assertEqual(self.app.music_root_var.get(), str(self.music))
+        self.dialog.whole_library()
+        self.assertEqual(self.dialog.music_root, self.music)
+        self.assertFalse(self.dialog.candidates)
+        other = self.base / "Other FLAC folder"
+        other.mkdir()
+        Image.new("RGB", (500, 500), "red").save(other / "cover.jpg")
+        with patch("rockbox_manager.media_dialog.filedialog.askdirectory", return_value=str(other)):
+            self.dialog.choose_folder()
+        self.wait()
+        self.assertEqual(self.dialog.music_root, other)
+        self.assertEqual([c.relative for c in self.dialog.candidates.values()], ["cover.jpg"])
+        self.assertEqual(self.app.music_root_var.get(), str(self.music))
+
     def test_actions_and_results_remain_visible_at_display_scaling_levels(self):
         self.dialog.close()
         for percent in (100, 125, 150, 200):

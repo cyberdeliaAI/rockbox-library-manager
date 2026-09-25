@@ -4,6 +4,8 @@
 
 - Add Settings → Prepare media for PodBox with a separate, cancellable scan
   of FLAC headers and existing `folder.jpg` / `cover.jpg` dimensions.
+- Choose a specific folder (including subfolders), even outside the library,
+  to prepare just those files without scanning the full music collection.
 - Cache unchanged file information locally; changing the artwork size
   reevaluates cached dimensions without decoding images again.
 - Convert selected mono/stereo hi-res FLAC to 16-bit / up to 44.1 kHz using
@@ -19,6 +21,8 @@
   and FLAC with cuesheet/application metadata that cannot safely be preserved.
 - Keep the current file unchanged after cancellation or verification failure;
   report completed files and individual errors. Add Windows FFmpeg integration tests.
+- Recheck actual tags before database writes so edits with unchanged file size
+  and timestamps cannot silently reuse an outdated database preview.
 
 This beta has not yet been validated on a physical iPod. High-resolution FLAC
 is a conversion candidate, not a definitive playback-failure diagnosis.

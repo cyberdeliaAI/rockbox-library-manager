@@ -4,7 +4,7 @@ from __future__ import annotations
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
 from . import media_tools as media
 
@@ -12,6 +12,7 @@ from . import media_tools as media
 class MediaDialog:
     def __init__(self, app, music_root, local_dir, colors, open_folder):
         self.app, self.music_root, self.local_dir = app, music_root.resolve(), local_dir
+        self.library_root = self.music_root
         self.open_folder = open_folder
         self.size = app.output_size()
         self.backups = app.media_backup_var.get()
@@ -31,8 +32,7 @@ class MediaDialog:
         frame.pack(fill="both", expand=True)
         tk.Label(frame, text="Prepare media for PodBox", font=app.F.title,
                  bg=colors["panel"], fg=colors["text"], anchor="w").pack(fill="x")
-        tk.Label(frame, text=f"{self.music_root}\n"
-                 f"FLAC: 16-bit, up to 44.1 kHz. Artwork: {self.size}×{self.size} px (Settings).\n"
+        tk.Label(frame, text=f"FLAC: 16-bit, up to 44.1 kHz. Artwork: {self.size}×{self.size} px (Settings).\n"
                  "Scanning only reads headers; unchanged files use the local cache. Nothing changes until you apply a selection.\n"
                  "Hi-res FLAC is a compatibility candidate, not necessarily unplayable. Small artwork needs a larger source.",
                  font=app.F.small, bg=colors["panel"], fg=colors["muted"],
@@ -61,6 +61,15 @@ class MediaDialog:
         self.artwork_var = tk.BooleanVar(value=True)
         self.fresh_var = tk.BooleanVar(value=False)
         self.controls = []
+        scope = tk.Frame(frame, bg=colors["panel"])
+        scope.pack(fill="x", before=toolbar, pady=(0, 8))
+        self.scope_var = tk.StringVar(value=str(self.music_root))
+        self.scope_entry = ttk.Entry(scope, textvariable=self.scope_var, state="readonly")
+        self.scope_entry.pack(side="left", fill="x", expand=True)
+        for label, command in (("Choose folder…", self.choose_folder), ("Whole library", self.whole_library)):
+            button = ttk.Button(scope, text=label, command=command)
+            button.pack(side="left", padx=(6, 0))
+            self.controls.append(button)
         for text, var in (("FLAC", self.audio_var), ("Artwork", self.artwork_var), ("Ignore cache", self.fresh_var)):
             button = ttk.Checkbutton(toolbar, text=text, variable=var)
             button.pack(side="left", padx=(0, 10))
@@ -153,10 +162,15 @@ class MediaDialog:
 
     def refresh_artwork(self, completed):
         from .gui import detect_artwork
-        paths = {Path(p).parent.as_posix() for p in completed if Path(p).suffix.lower() == ".jpg"}
+        indexed_root = self.app.db.get_meta("music_root", "")
+        if not indexed_root or Path(indexed_root).resolve() != self.library_root:
+            return
+        paths = {(self.music_root / p).parent.relative_to(self.library_root).as_posix()
+                 for p in completed if Path(p).suffix.lower() == ".jpg"
+                 and (self.music_root / p).is_relative_to(self.library_root)}
         updates = []
         for item in self.app.db.items_for_paths(list(paths)):
-            exists, name, mtime, size = detect_artwork(self.music_root / item.relative_path, self.app.output_name)
+            exists, name, mtime, size = detect_artwork(self.library_root / item.relative_path, self.app.output_name)
             updates.append((item.id, dict(artwork_name=name, artwork_exists=exists,
                            artwork_mtime_ns=mtime, artwork_size=size, problem="")))
         self.app.db.set_item_states_bulk(updates)
@@ -208,6 +222,34 @@ class MediaDialog:
         self.run("Scanning media", lambda: media.scan(self.music_root, self.size, self.local_dir / "media-scan.sqlite3",
                  self.app.cancel_event, self.progress, audio=audio, artwork=artwork, fresh=fresh))
 
+    def set_scope(self, folder):
+        if self.running:
+            return
+        self.music_root = Path(folder).resolve(strict=True)
+        self.scope_var.set(str(self.music_root))
+        self.tree.delete(*self.tree.get_children())
+        self.candidates.clear()
+        self.detail("")
+        self.status.configure(text="Ready to scan this folder and its subfolders.")
+        self.update_buttons()
+
+    def choose_folder(self):
+        chosen = filedialog.askdirectory(parent=self.win, title="Choose a folder to inspect (including subfolders)",
+                                         initialdir=str(self.music_root))
+        if chosen:
+            try:
+                self.set_scope(chosen)
+            except OSError as exc:
+                messagebox.showerror("Choose folder", str(exc), parent=self.win)
+                return
+            self.scan()
+
+    def whole_library(self):
+        try:
+            self.set_scope(self.library_root)
+        except OSError as exc:
+            messagebox.showerror("Music folder", str(exc), parent=self.win)
+
     def apply(self):
         chosen = [c for c in self.selected() if c.kind in ("flac", "artwork")]
         if not chosen:
@@ -232,10 +274,11 @@ class MediaDialog:
         selected = self.selected()
         if len(selected) != 1 or selected[0].kind == "flac":
             return
-        relative = Path(selected[0].relative).parent.as_posix()
+        folder = (self.music_root / selected[0].relative).parent
+        relative = folder.relative_to(self.library_root).as_posix() if folder.is_relative_to(self.library_root) else ""
         items = self.app.db.items_for_paths([relative])
         indexed_root = self.app.db.get_meta("music_root", "")
-        if not items or not indexed_root or Path(indexed_root).resolve() != self.music_root:
+        if not items or not indexed_root or Path(indexed_root).resolve() != self.library_root:
             messagebox.showinfo("Find artwork", "Run the library Rescan first so this artist or album is indexed. You can then use Search online in its artwork panel.", parent=self.win)
             return
         self.close()

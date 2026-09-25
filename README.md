@@ -36,7 +36,8 @@ The full license is included in [LICENSE](LICENSE). See also
 prepare…**: scan hi-res FLAC, resize oversized artwork to your configured size,
 and find larger sources for undersized artwork. Original media backups are
 enabled by default and can be disabled in Settings. FLAC conversion requires
-FFmpeg. See the [media preparation guide](docs/media-preparation.md).
+FFmpeg. **Choose folder…** lets you inspect just a known problem folder instead
+of the full library. See the [media preparation guide](docs/media-preparation.md).
 
 **Version 1.0.0** is the first public release.
 

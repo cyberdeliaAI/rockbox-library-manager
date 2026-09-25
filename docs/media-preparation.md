@@ -9,6 +9,15 @@ stays focused on the artist/album index.
 Choose the music folder and artwork size in Settings, then open **Scan and
 prepare…**. You can scan FLAC, artwork, or both. Scanning does not modify media.
 
+Already know which folder needs attention? Click **Choose folder…** to inspect
+just that folder and its subfolders immediately, without scanning the whole
+library first. It can also be a folder elsewhere on your computer. Leave only
+**FLAC** checked if you only want to inspect music. The short header check still
+identifies which files need conversion; standard-resolution FLAC is skipped.
+**Whole library** resets the scope. Choosing a maintenance folder does not
+change the application's main music-folder setting. If the configured library
+is disconnected, opening this tool lets you choose another folder directly.
+
 The scan visits the selected folder recursively. For standard FLAC it reads
 only the first 42 bytes (the STREAMINFO header), and for artwork it reads image
 dimensions. It does not decode entire tracks or images. A first pass still has
