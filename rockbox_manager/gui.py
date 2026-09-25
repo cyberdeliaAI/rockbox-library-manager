@@ -615,6 +615,7 @@ def consolidate_artist_folders(
         "ok": True,
         "target": str(target),
         "moved_entries": moved_entries,
+        "folder_moves": [[str(source.resolve()), str(target.resolve())] for _item, source in sources],
         "removed_sources": removed_sources,
         "preserved_artwork": preserved_artwork,
         "tag_changed": tag_changed,
@@ -2422,6 +2423,19 @@ class ArtworkApp:
                      justify="left", wraplength=420).pack(fill="x", pady=(2, 12))
         return card
 
+    def open_rockbox_database(self) -> None:
+        root = self._valid_music_root(silent=False)
+        if root is None:
+            return
+        if self.operation_lock.locked():
+            messagebox.showinfo(APP_NAME, "Wait for the current operation to finish first.")
+            return
+        from .database_dialog import DatabaseDialog
+        try:
+            DatabaseDialog(self, root, local_app_dir() / "rockbox-database-backups", C, open_in_file_manager)
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, str(exc))
+
     def _field_label(self, parent: tk.Misc, text: str, hint: str = "") -> None:
         tk.Label(parent, text=text, bg=C["panel"], fg=C["text"], font=self.F.body_b, anchor="w").pack(fill="x", pady=(8, 0))
         if hint:
@@ -2487,6 +2501,9 @@ class ArtworkApp:
                    command=lambda: open_in_file_manager(local_app_dir())).pack(side="left", padx=(7, 0))
         ttk.Button(store, text="Rebuild database", style="Small.TButton",
                    command=self.rebuild_database).pack(anchor="w", pady=(7, 0))
+
+        device_db = self._settings_card(left, "Rockbox database", "Update the iPod database after editing tags, with verified local backups.")
+        ttk.Button(device_db, text="Rockbox database…", command=self.open_rockbox_database).pack(anchor="w")
 
         src = self._settings_card(right, "Online sources",
                                   "MusicBrainz, Cover Art Archive and TheAudioDB work without a key. "+
@@ -2883,6 +2900,9 @@ class ArtworkApp:
                 messagebox.showerror(APP_NAME, detail, parent=win)
                 return
 
+            recorded = json.loads(self.db.get_meta("rockbox_folder_moves", "[]"))
+            recorded.extend(result.get("folder_moves") or [])
+            self.db.set_meta("rockbox_folder_moves", json.dumps(recorded))
             self.db.set_artist_auto_merge(aliases, True)
             self.db.set_artist_aliases(aliases, canonical)
             self.db.delete_health_issue(int(issue["id"]))
@@ -4570,6 +4590,9 @@ class ArtworkApp:
         self.toast.show(text, "ok" if not failed else "warn", ms=5000)
 
     def on_close(self) -> None:
+        if self._busy_kind == "rockbox_database":
+            messagebox.showinfo(APP_NAME, "Wait for the Rockbox database operation to finish before quitting.")
+            return
         if self.operation_lock.locked():
             if not messagebox.askyesno(APP_NAME, "A scan or fetch is still running. Quit anyway?"):
                 return
@@ -4834,29 +4857,35 @@ class TagEditorDialog:
         ):
             return
 
+        if not self.app.operation_lock.acquire(blocking=False):
+            self.status.configure(text="Another operation is still running. Wait for it to finish.", fg=C["warn"])
+            return
         self.save_btn.state(["disabled"])
         self.status.configure(text="Saving tags...", fg=C["muted"])
 
         def worker() -> None:
             changed = 0
             failed: list[str] = []
-            for path in self.files:
-                try:
-                    audio = engine.MutagenFile(str(path), easy=True)
-                    if audio is None:
-                        raise RuntimeError("unsupported metadata")
-                    for key, (mode, value) in edits.items():
-                        if mode == "set":
-                            audio[key] = [value]
-                        else:
-                            try:
-                                del audio[key]
-                            except KeyError:
-                                pass
-                    audio.save()
-                    changed += 1
-                except Exception as exc:
-                    failed.append(f"{path.name}: {exc}")
+            try:
+                for path in self.files:
+                    try:
+                        audio = engine.MutagenFile(str(path), easy=True)
+                        if audio is None:
+                            raise RuntimeError("unsupported metadata")
+                        for key, (mode, value) in edits.items():
+                            if mode == "set":
+                                audio[key] = [value]
+                            else:
+                                try:
+                                    del audio[key]
+                                except KeyError:
+                                    pass
+                        audio.save()
+                        changed += 1
+                    except Exception as exc:
+                        failed.append(f"{path.name}: {exc}")
+            finally:
+                self.app.operation_lock.release()
             self.app.ui_queue.put(("ui_callback", (self._finish_save, (edits, changed, failed))))
 
         threading.Thread(target=worker, name="tag-editor-save", daemon=True).start()
@@ -4873,7 +4902,7 @@ class TagEditorDialog:
         self.app.db.set_meta("health_dirty", "1")
         changed_fields = ", ".join(edits.keys())
         self.app.log_app(f"Tags updated in {self.folder}: {changed_fields}")
-        self.app.toast.show(f"Tags saved to {changed} tracks. Run Library Health again to re-check.", "ok", ms=5000)
+        self.app.toast.show(f"Tags saved to {changed} tracks. Use Settings > Rockbox database to update the iPod index.", "ok", ms=7000)
         self.win.destroy()
 
 class PickerDialog:

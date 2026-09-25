@@ -34,6 +34,12 @@ The full license is included in [LICENSE](LICENSE). See also
 
 **Version 1.0.0** is the first public release.
 
+**Version 1.1.0** includes a fix for PodBox's `/<HDD0>/Music/...` database
+paths, including on Windows. It provides **Settings → Rockbox database…** for previewing tag
+updates to an existing iPod index, making verified local backups and restoring
+them. This is experimental until tested on the player; see the
+[database update and recovery guide](docs/rockbox-database.md).
+
 ## Screenshots
 
 Screenshots from version 1.1.0-beta.1 on Windows.
@@ -62,7 +68,7 @@ Screenshots from version 1.1.0-beta.1 on Windows.
 
 ## Install and run
 
-Download the ZIP from [Releases](https://github.com/cyberdeliaAI/rockbox-library-manager/releases/latest)
+Download the ZIP from [Releases](https://github.com/cyberdeliaAI/rockbox-library-manager/releases)
 and extract it, or clone this repository. Open a terminal in the extracted folder.
 Python 3.10 or later, including Tk, is required.
 
