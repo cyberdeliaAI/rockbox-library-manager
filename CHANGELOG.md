@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.2.0-beta.1
+
+- Add Settings → Prepare media for PodBox with a separate, cancellable scan
+  of FLAC headers and existing `folder.jpg` / `cover.jpg` dimensions.
+- Choose a specific folder (including subfolders), even outside the library,
+  to prepare just those files without scanning the full music collection.
+- Cache unchanged file information locally; changing the artwork size
+  reevaluates cached dimensions without decoding images again.
+- Convert selected mono/stereo hi-res FLAC to 16-bit / up to 44.1 kHz using
+  an optional FFmpeg installation. Preserve tags and embedded covers, verify
+  output format, duration and decoding, then replace each original atomically.
+- Resize large artwork to the configured square JPEG size, with centre cropping
+  for non-square images. Flag small artwork for replacement using online search;
+  never automatically upscale it.
+- Add configurable local original-media backups, enabled by default, with
+  checksum verification and a recovery manifest. Users with their own backups
+  can disable them in Settings; the apply confirmation shows that choice.
+- Refuse stale previews, damaged conversions, linked paths, multichannel audio
+  and FLAC with cuesheet/application metadata that cannot safely be preserved.
+- Keep the current file unchanged after cancellation or verification failure;
+  report completed files and individual errors. Add Windows FFmpeg integration tests.
+- Recheck actual tags before database writes so edits with unchanged file size
+  and timestamps cannot silently reuse an outdated database preview.
+
+This beta has not yet been validated on a physical iPod. High-resolution FLAC
+is a conversion candidate, not a definitive playback-failure diagnosis.
+
 ## 1.1.0
 
 - Release the Rockbox database dialog with tag-change previews, mandatory

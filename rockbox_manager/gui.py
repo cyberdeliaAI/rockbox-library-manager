@@ -2023,6 +2023,9 @@ class ArtworkApp:
         output_name = str(self.config.get("output_name") or self.db.get_meta("output_name", "folder.jpg"))
         self.output_name = output_name if output_name in ("folder.jpg", "cover.jpg") else "folder.jpg"
         self.output_size_var = tk.StringVar(value=str(self.config.get("output_size") or DEFAULT_OUTPUT_SIZE))
+        self.media_backup_var = tk.BooleanVar(value=self.config.get("media_backup", True))
+        self.media_backup_path_var = tk.StringVar(value=str(self.config.get("media_backup_path") or local_app_dir() / "media-backups"))
+        self.ffmpeg_path_var = tk.StringVar(value=str(self.config.get("ffmpeg_path") or ""))
         self.api_lastfm_key_var = tk.StringVar()
         self.api_lastfm_secret_var = tk.StringVar()
         self.api_fanart_key_var = tk.StringVar()
@@ -2442,6 +2445,38 @@ class ArtworkApp:
             tk.Label(parent, text=hint, bg=C["panel"], fg=C["faint"], font=self.F.tiny, anchor="w",
                      justify="left", wraplength=420).pack(fill="x", pady=(1, 5))
 
+    def open_media_tools(self) -> None:
+        if self.operation_lock.locked():
+            return
+        root = self._valid_music_root(silent=True)
+        if root is None:
+            chosen = filedialog.askdirectory(title="Choose a folder to prepare for PodBox")
+            if not chosen:
+                return
+            root = Path(chosen)
+        raw = self.output_size_var.get().strip()
+        if not raw.isdigit() or not 64 <= int(raw) <= 2000:
+            messagebox.showerror(APP_NAME, "Artwork size must be a whole number between 64 and 2000.")
+            return
+        if self.media_backup_var.get() and not Path(self.media_backup_path_var.get()).expanduser().is_absolute():
+            messagebox.showerror(APP_NAME, "Choose an absolute local backup folder path first.")
+            return
+        from .media_dialog import MediaDialog
+        self._persist_basic_config()
+        MediaDialog(self, root, local_app_dir(), C, open_in_file_manager)
+
+    def choose_ffmpeg(self) -> None:
+        chosen = filedialog.askopenfilename(title="Select FFmpeg executable",
+                    filetypes=[("FFmpeg", "ffmpeg.exe" if os.name == "nt" else "ffmpeg"), ("All files", "*")])
+        if chosen:
+            self.ffmpeg_path_var.set(chosen)
+
+    def choose_media_backup_folder(self) -> None:
+        chosen = filedialog.askdirectory(title="Select a backup folder on this computer",
+                                         initialdir=self.media_backup_path_var.get())
+        if chosen:
+            self.media_backup_path_var.set(chosen)
+
     def _build_settings_view(self, parent: tk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(0, weight=1)
@@ -2484,6 +2519,27 @@ class ArtworkApp:
         tk.Label(size_row, text="px", bg=C["panel"], fg=C["muted"], font=self.F.small).pack(
             side="left", padx=(7, 0))
         self.output_size_var.trace_add("write", lambda *_a: self._mark_settings_dirty())
+
+        media_card = self._settings_card(left, "Prepare media for PodBox",
+            "Scan hi-res FLAC and artwork sizes. Preview and select files before converting or resizing; find better sources for small artwork.")
+        ttk.Checkbutton(media_card, text="Back up originals before converting or resizing",
+                        variable=self.media_backup_var).pack(anchor="w")
+        self._field_label(media_card, "Local backup folder", "Applies to media conversion and resizing. Rockbox database backups remain mandatory.")
+        backup_row = tk.Frame(media_card, bg=C["panel"])
+        backup_row.pack(fill="x")
+        FieldEntry(backup_row, self.F, self.media_backup_path_var, width=28).pack(side="left", fill="x", expand=True)
+        ttk.Button(backup_row, text="Browse…", style="Small.TButton", command=self.choose_media_backup_folder).pack(side="left", padx=(7, 0))
+        self._field_label(media_card, "FFmpeg executable", "Optional for scans and artwork; required for FLAC conversion. Leave blank to use PATH.")
+        ffmpeg_row = tk.Frame(media_card, bg=C["panel"])
+        ffmpeg_row.pack(fill="x")
+        FieldEntry(ffmpeg_row, self.F, self.ffmpeg_path_var, width=28, placeholder="ffmpeg.exe / ffmpeg").pack(side="left", fill="x", expand=True)
+        ttk.Button(ffmpeg_row, text="Browse…", style="Small.TButton", command=self.choose_ffmpeg).pack(side="left", padx=(7, 0))
+        for var in (self.media_backup_var, self.media_backup_path_var, self.ffmpeg_path_var):
+            var.trace_add("write", lambda *_a: self._mark_settings_dirty())
+        media_buttons = tk.Frame(media_card, bg=C["panel"])
+        media_buttons.pack(fill="x", pady=(12, 0))
+        ttk.Button(media_buttons, text="Scan and prepare…", command=self.open_media_tools).pack(side="left")
+        ttk.Button(media_buttons, text="Open backups", command=lambda: open_in_file_manager(Path(self.media_backup_path_var.get()).expanduser())).pack(side="left", padx=(7, 0))
 
         store = self._settings_card(left, "Local data", "Index and thumbnails are stored on this computer.")
         self._field_label(store, "Database")
@@ -3651,6 +3707,9 @@ class ArtworkApp:
         self.config["music_root"] = self.music_root_var.get().strip()
         self.config["output_name"] = self.output_name
         self.config["output_size"] = self.output_size()
+        self.config["media_backup"] = self.media_backup_var.get()
+        self.config["media_backup_path"] = self.media_backup_path_var.get().strip()
+        self.config["ffmpeg_path"] = self.ffmpeg_path_var.get().strip()
         self.config["page_size"] = int(self.config.get("page_size") or DEFAULT_PAGE_SIZE)
         self.config["zoom"] = self.zoom
         self.config["kind_filter"] = self.kind_filter
@@ -4590,8 +4649,8 @@ class ArtworkApp:
         self.toast.show(text, "ok" if not failed else "warn", ms=5000)
 
     def on_close(self) -> None:
-        if self._busy_kind == "rockbox_database":
-            messagebox.showinfo(APP_NAME, "Wait for the Rockbox database operation to finish before quitting.")
+        if self._busy_kind in ("rockbox_database", "media"):
+            messagebox.showinfo(APP_NAME, "Wait for the database or media operation to finish before quitting. Media operations can be cancelled in their dialog.")
             return
         if self.operation_lock.locked():
             if not messagebox.askyesno(APP_NAME, "A scan or fetch is still running. Quit anyway?"):

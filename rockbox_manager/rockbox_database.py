@@ -351,6 +351,7 @@ class UpdatePlan:
     changed_tracks: int
     checked_tracks: int
     track_stamps: dict[Path, tuple[int, int]] = field(default_factory=dict)
+    track_metadata: dict[Path, dict[str, str]] = field(default_factory=dict)
 
 
 def _stamp(path: Path) -> tuple[int, int]:
@@ -409,7 +410,7 @@ def preview_update(music_root: Path, *, moves: list[list[str]] | None = None,
         raise DatabaseError("An interrupted update needs recovery. Restore its local backup before updating again.")
     before = snapshot(device)
     db = TagDatabase.parse(before)
-    changes = {}; descriptions = []; stamps = {}; checked = 0
+    changes = {}; descriptions = []; stamps = {}; metadata = {}; checked = 0
     for idx, row in enumerate(db.rows):
         if row[23] & 1:
             continue
@@ -435,6 +436,7 @@ def preview_update(music_root: Path, *, moves: list[list[str]] | None = None,
         if _stamp(path) != initial:
             raise DatabaseError(f"Tags changed while reading: {path.name}")
         stamps[path.resolve()] = initial
+        metadata[path.resolve()] = values
         delta: dict[int, str | int] = {}
         for tag, key in FIELDS.items():
             if tag == 9:
@@ -464,7 +466,7 @@ def preview_update(music_root: Path, *, moves: list[list[str]] | None = None,
         if checked % 50 == 0:
             progress(f"Reading tags: {checked} tracks")
     _check_current(device, before)
-    return UpdatePlan(device, before, db.updated(changes), descriptions, len(changes), checked, stamps)
+    return UpdatePlan(device, before, db.updated(changes), descriptions, len(changes), checked, stamps, metadata)
 
 
 def _install(device: Path, desired: dict[str, bytes], current: dict[str, bytes], backup: Path) -> None:
@@ -532,19 +534,26 @@ def _install(device: Path, desired: dict[str, bytes], current: dict[str, bytes],
             journal.unlink(missing_ok=True)
 
 
+def _check_tracks(plan: UpdatePlan, message: str) -> None:
+    # FAT/exFAT and rapid writes on Windows can retain identical size/mtime.
+    # Compare the actual supported tags as well before writing a stale preview.
+    for path, stamp in plan.track_stamps.items():
+        try:
+            if not path.is_file() or _stamp(path) != stamp or _metadata(path) != plan.track_metadata[path]:
+                raise DatabaseError(message)
+        except (OSError, KeyError, DatabaseError) as exc:
+            raise DatabaseError(message) from exc
+
+
 def apply_update(plan: UpdatePlan, backup_root: Path) -> Path | None:
     if not plan.changed_tracks:
         return None
     with _device_lock(plan.device):
         if (_rb(plan.device) / JOURNAL).exists():
             raise DatabaseError("Another or interrupted database update exists. Restore a backup first.")
-        for path, stamp in plan.track_stamps.items():
-            if not path.is_file() or _stamp(path) != stamp:
-                raise DatabaseError("Music files changed after the preview. Create a new preview.")
+        _check_tracks(plan, "Music files changed after the preview. Create a new preview.")
         backup = backup_database(plan.device, backup_root, expected=plan.before)
-        for path, stamp in plan.track_stamps.items():
-            if not path.is_file() or _stamp(path) != stamp:
-                raise DatabaseError(f"Music files changed while backing up. Nothing was written. Backup: {backup}")
+        _check_tracks(plan, f"Music files changed while backing up. Nothing was written. Backup: {backup}")
         _install(plan.device, plan.after, plan.before, backup)
         return backup
 
