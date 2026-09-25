@@ -1,6 +1,6 @@
 # Rockbox database updates and local backups
 
-This development feature is available from **Settings → Rockbox database…**.
+This feature is available from **Settings → Rockbox database…**.
 It updates existing indexed tracks from their music-file tags after a preview
 and confirmation. A verified local backup is mandatory before any database
 update, and also before restoring an earlier backup.
@@ -81,7 +81,7 @@ byte order. Unknown versions, incomplete tables, pending commits, dirty master
 headers, unexpected files, invalid offsets, symlinks and unsupported paths stop
 the update. Non-default Rockbox database locations are not supported.
 
-Since version **1.1.0-beta.2**, both `/Music/...` and PodBox's
+Since version **1.1.0**, both `/Music/...` and PodBox's
 `/<HDD0>/Music/...` paths refer to the connected iPod's music folder (for example,
 `D:\Music\...` on Windows). `<HDD0>` is Rockbox's name for internal ATA volume
 zero; see the [volume definitions](https://github.com/anthonyfletcher/podbox/blob/master/firmware/export/mv.h)

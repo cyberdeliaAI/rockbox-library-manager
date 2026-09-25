@@ -1,6 +1,9 @@
 # Changelog
 
-## 1.1.0-beta.2
+## 1.1.0
+
+- Release the Rockbox database dialog with tag-change previews, mandatory
+  verified local backups, manual backups, and recovery controls.
 
 - Fix database previews for PodBox paths such as `/<HDD0>/Music/...`, mapping
   the internal volume to the connected iPod on Windows, macOS and Linux.
@@ -9,6 +12,8 @@
   that could escape the device or access a Windows alternate data stream.
 - Include prominent credits to Anthony Fletcher and PodBox, the original
   artwork source references, and the full GNU GPL v2 license.
+
+Direct database updates remain experimental until validated on the actual player.
 
 ## 1.1.0-beta.1
 
