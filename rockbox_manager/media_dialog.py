@@ -33,8 +33,7 @@ class MediaDialog:
         tk.Label(frame, text="Prepare media for PodBox", font=app.F.title,
                  bg=colors["panel"], fg=colors["text"], anchor="w").pack(fill="x")
         tk.Label(frame, text=f"FLAC: 16-bit, up to 44.1 kHz. Artwork: {self.size}×{self.size} px (Settings).\n"
-                 "Scanning only reads headers; unchanged files use the local cache. Nothing changes until you apply a selection.\n"
-                 "Hi-res FLAC is a compatibility candidate, not necessarily unplayable. Small artwork needs a larger source.",
+                 "Preview a folder or the whole library, then select files to change. Small artwork needs a larger source.",
                  font=app.F.small, bg=colors["panel"], fg=colors["muted"],
                  anchor="w", justify="left", wraplength=840).pack(fill="x", pady=(5, 10))
         backup_text = f"Local backups: {self.backup_root}" if self.backups else "Local backups OFF — selected originals will be replaced."
@@ -133,7 +132,7 @@ class MediaDialog:
         self.app.ui_queue.put(("ui_callback", (self.show_progress, (text,))))
 
     def show_progress(self, text):
-        self.status.configure(text=text)
+        self.status.configure(text=text if len(text) <= 160 else text[:157] + "…")
 
     def run(self, kind, work):
         if self.running or not self.app.operation_lock.acquire(blocking=False):
