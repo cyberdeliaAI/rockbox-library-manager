@@ -1,7 +1,36 @@
 # Rockbox Library Manager
 
-Browse a Rockbox music library, manage artist and album artwork, check library
-health, and edit album tags in one desktop application.
+**A desktop companion tool built for [PodBox](https://github.com/anthonyfletcher/podbox).**
+Browse your music library, manage artist and album artwork, check library health,
+and edit album tags to prepare your library for use with PodBox.
+
+## Credits and origins
+
+Full credit for **PodBox and the original Rockbox Music Artwork Fetcher** goes to
+[Anthony Fletcher (@anthonyfletcher)](https://github.com/anthonyfletcher).
+This application grew out of his
+[artwork tool](https://github.com/anthonyfletcher/podbox/tree/master/tools/art_fetch),
+and its artwork engine is adapted from his
+[`art_fetch.py`](https://github.com/anthonyfletcher/podbox/blob/master/tools/art_fetch/art_fetch.py).
+His work is the foundation of this project.
+
+Rockbox Library Manager was created specifically as a helper for PodBox, adding
+a desktop interface and library-management tools around that foundation.
+This companion application is maintained separately by
+[cyberdeliaAI](https://github.com/cyberdeliaAI).
+
+Thank you, Anthony, for creating PodBox and sharing the artwork tool that made
+this application possible. See [CREDITS.md](CREDITS.md) for source references and
+acknowledgements.
+
+## License
+
+This project is distributed under the **GNU General Public License, version 2
+(GPL-2.0)**, following the license of the original PodBox source.
+The full license is included in [LICENSE](LICENSE). See also
+[PodBox's license declaration](https://github.com/anthonyfletcher/podbox#licence).
+
+## Versions
 
 **Version 1.0.0** is the first public release.
 

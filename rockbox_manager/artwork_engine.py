@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-only
 """
 Rockbox Music Artwork Fetcher
 Integrated artist + album artwork engine for Rockbox Library Manager.
+
+Original artwork tool by Anthony Fletcher (@anthonyfletcher), from PodBox:
+https://github.com/anthonyfletcher/podbox/blob/master/tools/art_fetch/art_fetch.py
+
+Adapted for this PodBox companion application by cyberdeliaAI: package and
+desktop integration, shared versioning, and artwork workflow changes.
+Attribution and GNU GPL v2 notice added on 2026-09-25.
+See CREDITS.md and LICENSE in the repository root.
 """
 from __future__ import annotations
 
