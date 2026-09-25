@@ -32,6 +32,12 @@ The full license is included in [LICENSE](LICENSE). See also
 
 ## Versions
 
+**Version 1.2.0-beta.1** adds **Settings → Prepare media for PodBox → Scan and
+prepare…**: scan hi-res FLAC, resize oversized artwork to your configured size,
+and find larger sources for undersized artwork. Original media backups are
+enabled by default and can be disabled in Settings. FLAC conversion requires
+FFmpeg. See the [media preparation guide](docs/media-preparation.md).
+
 **Version 1.0.0** is the first public release.
 
 **Version 1.1.0** includes a fix for PodBox's `/<HDD0>/Music/...` database
@@ -64,6 +70,10 @@ Screenshots from version 1.1.0-beta.1 on Windows.
   their folders, or keeping them separate.
 - Edit selected album tags. Clearing a tag requires an explicit choice and
   confirmation.
+- Scan FLAC headers and artwork dimensions with a local cache, then convert
+  selected hi-res FLAC to 16-bit / up to 44.1 kHz or resize large artwork.
+- Flag artwork smaller than the configured size and open the artwork search
+  to find a better source; small images are never automatically upscaled.
 - Use the same artwork engine from the command line.
 
 ## Install and run
@@ -182,11 +192,17 @@ xvfb-run -a -s "-screen 0 1920x1200x24" python -m unittest discover -s tests -v
 
 Checks cover dialog controls, scaling, font roles, remembered identity choices,
 merge confirmation, preservation of files and artwork, and album-name conflicts.
+Media tests also exercise cached scans, actual FFmpeg conversion, metadata and
+cover preservation, backup choices, cancellation, stale previews and damaged
+input. Install FFmpeg on PATH to run the audio integration tests; those tests
+are skipped when it is absent. Windows CI installs FFmpeg and runs them.
 
 ## Project layout
 
 - `rockbox_library_manager.py`: application entry point.
 - `rockbox_manager/gui.py`: desktop UI, Library Health and tag editor.
 - `rockbox_manager/artwork_engine.py`: artwork lookup and image processing.
+- `rockbox_manager/media_tools.py`: cached inspection and verified media replacement.
+- `rockbox_manager/media_dialog.py`: media selection, conversion and resizing UI.
 - `rockbox_manager/launcher.py`: GUI and command-line dispatch.
 - `tests/`: duplicate-resolution regression tests.
