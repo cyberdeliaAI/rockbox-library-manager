@@ -98,3 +98,13 @@ class DatabaseDialogTests(unittest.TestCase):
         self.assertFalse(self.app.operation_lock.locked())
         self.assertTrue(self.dialog.apply_btn.instate(["disabled"]))
         self.assertIn("Unsupported format", self.dialog.text.get("1.0", "end"))
+
+    def test_several_tag_values_point_to_library_health(self):
+        audio = FLAC(self.tracks[0]); audio["genre"] = ["Pop", "Rock"]; audio.save()
+        with patch("rockbox_manager.database_dialog.messagebox.showerror") as error:
+            self.dialog.buttons[0].invoke()
+            self.wait()
+        message = error.call_args.args[1]
+        self.assertIn("Multiple genre values in 01.flac", message)
+        self.assertIn("Library Health → Analyze library → Database", message)
+        self.assertIsNone(self.dialog.plan)

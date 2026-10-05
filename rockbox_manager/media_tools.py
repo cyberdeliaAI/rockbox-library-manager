@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from contextlib import closing
 from datetime import datetime
 from pathlib import Path
+from typing import Callable, Optional
 
 from mutagen.flac import FLAC, StreamInfo
 from PIL import Image, ImageOps
@@ -35,9 +36,36 @@ def check_cancel(cancel):
         raise Cancelled("Cancelled")
 
 
+TEMP_PREFIX = ".rlm-"
+
+
 def signature(path):
     s = path.stat()
     return [s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns]
+
+
+def cache_signature(sig):
+    # Size and modification time only. The device number changes when a player is
+    # reconnected (and a drive letter can change on Windows), which must not throw
+    # the whole cache away. Replacement still compares the full signature.
+    return [sig[2], sig[3]]
+
+
+def device_root(path):
+    """The player root (the folder holding .rockbox) above ``path``, or the filesystem anchor."""
+    for parent in (path, *path.parents):
+        if (parent / ".rockbox").is_dir():
+            return parent
+    return Path(path.anchor)
+
+
+def cache_key(path, anchor):
+    # Relative to the player root, so /Volumes/IPOD and /Volumes/IPOD 1 (or E: and
+    # F:) share their cached entries.
+    try:
+        return path.relative_to(anchor).as_posix()
+    except ValueError:
+        return path.as_posix()
 
 
 def linked(path):
@@ -75,7 +103,9 @@ def image_info(path):
     with Image.open(path) as image:
         if image.format != "JPEG":
             raise MediaError("Artwork with a .jpg filename must contain JPEG data")
-        return dict(width=image.width, height=image.height)
+        # Pillow reads the frame marker without decoding: Rockbox can't show progressive JPEG.
+        return dict(width=image.width, height=image.height,
+                    progressive=bool(image.info.get("progressive") or image.info.get("progression")))
 
 
 @dataclass
@@ -89,10 +119,13 @@ class Candidate:
         if self.kind == "flac":
             i = self.info
             return f"{i['bits']}-bit / {i['rate'] / 1000:g} kHz → 16-bit / {min(i['rate'], 44100) / 1000:g} kHz"
+        progressive = " progressive JPEG" if self.info.get("progressive") else ""
         if self.kind == "small_artwork":
-            return f"{self.info['width']}×{self.info['height']} — too small; find a larger source"
+            return f"{self.info['width']}×{self.info['height']}{progressive} — too small; find a larger source"
+        if self.info["width"] == self.info["height"] == size:
+            return f"{size}×{size} progressive JPEG → baseline JPEG"
         crop = " (centre crop)" if self.info['width'] != self.info['height'] else ""
-        return f"{self.info['width']}×{self.info['height']} → {size}×{size}{crop}"
+        return f"{self.info['width']}×{self.info['height']}{progressive} → {size}×{size}{crop}"
 
 
 @dataclass
@@ -111,8 +144,12 @@ def scan(root: Path, size: int, cache_path: Path, cancel: threading.Event,
         raise MediaError("Artwork size must be between 64 and 2000 pixels")
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     result = ScanResult()
+    anchor = device_root(root)
     with closing(sqlite3.connect(cache_path)) as cache, cache:
-        cache.execute("CREATE TABLE IF NOT EXISTS media (path TEXT PRIMARY KEY, signature TEXT, info TEXT)")
+        # Version 2: keys relative to the player root, size+mtime signatures and the
+        # progressive-JPEG flag. Version 1 entries lack the flag, so they are dropped.
+        cache.execute("DROP TABLE IF EXISTS media")
+        cache.execute("CREATE TABLE IF NOT EXISTS media_v2 (path TEXT PRIMARY KEY, signature TEXT, info TEXT)")
         def walk_error(exc):
             result.errors.append(str(exc))
         for folder, dirs, files in os.walk(root, onerror=walk_error, followlinks=False):
@@ -126,6 +163,12 @@ def scan(root: Path, size: int, cache_path: Path, cancel: threading.Event,
                     break
                 kind = "flac" if audio and name.lower().endswith(".flac") else (
                     "artwork" if artwork and name.lower() in ("folder.jpg", "cover.jpg") else None)
+                if name.startswith(TEMP_PREFIX) and name.lower().endswith((".flac", ".jpg")):
+                    # mkstemp output from an operation that was interrupted before the
+                    # atomic replacement: the original next to it was never touched.
+                    result.errors.append(f"{(Path(folder) / name).relative_to(root).as_posix()}: leftover temporary "
+                                         "file from an interrupted operation; the original was kept and this file can be deleted")
+                    continue
                 if not kind or name.startswith('.'):
                     continue
                 path = Path(folder) / name
@@ -133,23 +176,23 @@ def scan(root: Path, size: int, cache_path: Path, cancel: threading.Event,
                 try:
                     safe_path(root, relative)
                     sig = signature(path)
-                    key = str(path)
-                    row = None if fresh else cache.execute("SELECT signature, info FROM media WHERE path=?", (key,)).fetchone()
-                    if row and json.loads(row[0]) == sig:
+                    key = cache_key(path, anchor)
+                    row = None if fresh else cache.execute("SELECT signature, info FROM media_v2 WHERE path=?", (key,)).fetchone()
+                    if row and json.loads(row[0]) == cache_signature(sig):
                         info = json.loads(row[1])
                         result.cached += 1
                     else:
                         info = audio_info(path) if kind == "flac" else image_info(path)
                         if signature(path) != sig:
                             raise MediaError("File changed during scan; scan again")
-                        cache.execute("INSERT OR REPLACE INTO media VALUES (?, ?, ?)",
-                                      (key, json.dumps(sig), json.dumps(info)))
+                        cache.execute("INSERT OR REPLACE INTO media_v2 VALUES (?, ?, ?)",
+                                      (key, json.dumps(cache_signature(sig)), json.dumps(info)))
                     if kind == "flac" and info["channels"] > 2:
                         raise MediaError("Multichannel FLAC: automatic downmix is not supported")
                     if kind == "artwork" and min(info["width"], info["height"]) < size:
                         kind = "small_artwork"
                     needed = (info["bits"] > 16 or info["rate"] > 44100) if kind == "flac" else (
-                        info["width"] != size or info["height"] != size)
+                        info["width"] != size or info["height"] != size or info.get("progressive", False))
                     if needed:
                         result.candidates.append(Candidate(relative, kind, sig, info))
                 except Exception as exc:
@@ -229,18 +272,23 @@ def convert_flac(source, target, executable, cancel):
                            "-map", "0:a:0", "-f", "null", "-"], cancel)
 
 
-def resize_artwork(source, target, size):
-    with Image.open(source) as original:
-        image = ImageOps.exif_transpose(original).convert("RGB")
-        if min(image.size) < size:
-            raise MediaError("Artwork is too small; choose a larger source instead of upscaling")
-        image = ImageOps.fit(image, (size, size), Image.Resampling.LANCZOS)
-        expected = (size, size)
-        image.save(target, "JPEG", quality=92, optimize=True, progressive=False)
+def write_artwork(image, target, size):
+    """Save ``image`` as a square baseline JPEG of ``size`` pixels and verify it."""
+    image = ImageOps.exif_transpose(image).convert("RGB")
+    if min(image.size) < size:
+        raise MediaError("Artwork is too small; choose a larger source instead of upscaling")
+    image = ImageOps.fit(image, (size, size), Image.Resampling.LANCZOS)
+    image.save(target, "JPEG", quality=92, optimize=True, progressive=False)
     with Image.open(target) as verify:
         verify.load()
-        if verify.size != expected or verify.format != "JPEG" or verify.info.get("progressive"):
+        if verify.size != (size, size) or verify.format != "JPEG" or verify.info.get("progressive"):
             raise MediaError("Resized artwork verification failed")
+
+
+def resize_artwork(source, target, size):
+    with Image.open(source) as original:
+        original.load()
+        write_artwork(original, target, size)
 
 
 def digest(path, cancel):
@@ -288,12 +336,20 @@ class ApplyResult:
     backup_folder: Path | None = None
 
 
+ArtworkFetcher = Callable[[Path], "Image.Image"]
+
+
 def apply(root: Path, candidates: list[Candidate], size: int, backup_root: Path | None,
-          ffmpeg: str, cancel: threading.Event, progress=lambda text: None):
+          ffmpeg: str, cancel: threading.Event, progress=lambda text: None,
+          fetch_artwork: Optional[ArtworkFetcher] = None):
+    """Replace the selected files. ``fetch_artwork(path)`` returns a larger image for
+    small artwork (or raises MediaError); without it small artwork is refused."""
     root = root.resolve(strict=True)
     if not 64 <= size <= 2000:
         raise MediaError("Artwork size must be between 64 and 2000 pixels")
-    if any(c.kind not in ("flac", "artwork") for c in candidates):
+    if any(c.kind not in ("flac", "artwork", "small_artwork") for c in candidates):
+        raise MediaError("Unknown media operation")
+    if fetch_artwork is None and any(c.kind == "small_artwork" for c in candidates):
         raise MediaError("Small artwork needs a larger source; it cannot be resized automatically")
     executable = find_ffmpeg(ffmpeg) if any(c.kind == "flac" for c in candidates) else ""
     result = ApplyResult()
@@ -327,11 +383,18 @@ def apply(root: Path, candidates: list[Candidate], size: int, backup_root: Path 
                 required += round(i["samples"] * min(44100, i["rate"]) / i["rate"]) * i["channels"] * 2
             if shutil.disk_usage(source.parent).free < required:
                 raise MediaError("Not enough free space beside the original for a temporary output")
-            fd, tempname = tempfile.mkstemp(prefix=".rlm-", suffix=source.suffix, dir=source.parent)
+            image = None
+            if candidate.kind == "small_artwork":
+                progress(f"{n}/{len(candidates)}: Searching online for larger artwork for {candidate.relative}")
+                image = fetch_artwork(source)
+                check_cancel(cancel)
+            fd, tempname = tempfile.mkstemp(prefix=TEMP_PREFIX, suffix=source.suffix, dir=source.parent)
             os.close(fd)
             temporary = Path(tempname)
             if candidate.kind == "flac":
                 convert_flac(source, temporary, executable, cancel)
+            elif image is not None:
+                write_artwork(image, temporary, size)
             else:
                 resize_artwork(source, temporary, size)
             check_cancel(cancel)
