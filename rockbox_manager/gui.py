@@ -39,19 +39,15 @@ import time
 import webbrowser
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, replace
-from functools import lru_cache
-from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable, Optional
-from urllib.parse import quote_plus, unquote, urlparse
+from urllib.parse import unquote, urlparse
 
 import tkinter as tk
-import tkinter.font as tkfont
 from tkinter import filedialog, messagebox, ttk
 
-from PIL import Image, ImageDraw, ImageOps, ImageTk
+from PIL import Image, ImageTk
 
 try:
     from . import artwork_engine as engine
@@ -71,8 +67,24 @@ except Exception:
     DND_AVAILABLE = False
 
 
-APP_NAME = "Rockbox Library Manager"
 from . import __version__ as APP_VERSION
+from .common import (APP_NAME, EXCLUDED_DIRS, IS_MAC, MOD, MOD_LABEL, USER_AGENT, anchor_crop_square,  # noqa: F401
+                     download_image, format_bytes, humanize_age, is_url, load_image, open_in_file_manager, to_rgb)
+from .folders import consolidate_artist_folders  # noqa: F401
+from .health import CATEGORIES as HEALTH_CATEGORIES
+from .health import FILTERS as HEALTH_FILTERS
+from .health import ISSUE_LABELS as HEALTH_LABELS
+from .health import HealthScanner  # noqa: F401
+from .library import (FastLibraryScanner, LibraryDB, LibraryItem, artist_identity_key,  # noqa: F401
+                      choose_display_name, contains_audio_immediate, detect_artwork, display_name_score,
+                      image_file_signature, immediate_subdirs, sample_audio_files)
+from .picker import PickerDialog  # noqa: F401
+from .tag_editor import TagEditorDialog  # noqa: F401
+from .ui_theme import (C, app_icon_image, apply_style, blend, hex_to_rgb, make_fonts,  # noqa: F401
+                       placeholder_art, rounded_fit, rounded_panel, shape_mask, shaped_thumbnail)
+from .widgets import (Dot, DropZone, FieldEntry, NavItem, ScrollFrame, Segmented, Toast, Tooltip,  # noqa: F401
+                      recolor, wheel_pixels)
+
 GUI_CONFIG_FILENAME = "artwork_gui_config.json"
 DB_FILENAME = "artwork_gui.sqlite3"
 THUMB_DIRNAME = "artwork_gui_thumbs"
@@ -82,15 +94,9 @@ DEFAULT_OUTPUT_SIZE = 300
 ZOOM_MIN, ZOOM_MAX, ZOOM_DEFAULT = 110, 230, 150
 PHOTO_CACHE_LIMIT = 320
 LOG_MAX_LINES = 4000
-PICKER_MAX_EDGE = 1000
-USER_AGENT = f"RockboxLibraryManager/{APP_VERSION}"
-EXCLUDED_DIRS = {"$recycle.bin", "system volume information"}
 SUPPORTED_MANUAL_IMAGE_EXTS = {
     ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".gif",
 }
-IS_MAC = sys.platform == "darwin"
-MOD = "Command" if IS_MAC else "Control"
-MOD_LABEL = "⌘" if IS_MAC else "Ctrl+"
 
 FRIENDLY_REASONS = {
     "unmatched": "The folder name didn't match the audio tags, so auto-fetch skipped it. "
@@ -143,61 +149,6 @@ def save_gui_config(data: dict[str, Any]) -> None:
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
-# ----------------------------------------------------------------------
-# Small helpers
-# ----------------------------------------------------------------------
-def image_file_signature(path: Path) -> tuple[int, int]:
-    """Return mtime_ns + size without opening the image."""
-    try:
-        st = path.stat()
-        return int(st.st_mtime_ns), int(st.st_size)
-    except OSError:
-        return 0, 0
-
-
-def contains_audio_immediate(folder: Path) -> bool:
-    """Fast check: inspect directory entries only, never parse tags."""
-    try:
-        with os.scandir(folder) as it:
-            for entry in it:
-                if entry.is_file(follow_symlinks=False):
-                    if Path(entry.name).suffix.casefold() in engine.AUDIO_EXTS:
-                        return True
-    except OSError:
-        return False
-    return False
-
-
-def immediate_subdirs(folder: Path) -> list[Path]:
-    out: list[Path] = []
-    try:
-        with os.scandir(folder) as it:
-            for entry in it:
-                if not entry.is_dir(follow_symlinks=False):
-                    continue
-                if entry.name.casefold() in EXCLUDED_DIRS or entry.name.startswith("."):
-                    continue
-                out.append(Path(entry.path))
-    except OSError:
-        pass
-    out.sort(key=lambda p: p.name.casefold())
-    return out
-
-
-def detect_artwork(folder: Path, preferred_name: str) -> tuple[bool, str, int, int]:
-    """Find preferred artwork name first, then the other supported Rockbox name."""
-    candidates = [preferred_name]
-    for name in ("folder.jpg", "cover.jpg"):
-        if name not in candidates:
-            candidates.append(name)
-    for name in candidates:
-        path = folder / name
-        if path.is_file():
-            mtime_ns, size = image_file_signature(path)
-            return True, name, mtime_ns, size
-    return False, preferred_name, 0, 0
-
-
 def file_drop_to_path(data: str) -> Optional[Path]:
     """Parse the first path from a TkDND file list (kept for compatibility)."""
     value = (data or "").strip()
@@ -213,1188 +164,6 @@ def file_drop_to_path(data: str) -> Optional[Path]:
     return Path(value) if value else None
 
 
-def to_rgb(img: Image.Image) -> Image.Image:
-    """Apply EXIF rotation and flatten transparency onto black."""
-    try:
-        img = ImageOps.exif_transpose(img)
-    except Exception:
-        pass
-    if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
-        rgba = img.convert("RGBA")
-        base = Image.new("RGB", rgba.size, (0, 0, 0))
-        base.paste(rgba, mask=rgba.split()[-1])
-        return base
-    return img.convert("RGB")
-
-
-def load_image(source: Any) -> Image.Image:
-    """Open a path, bytes or file-like object as a fully loaded RGB image."""
-    if isinstance(source, (bytes, bytearray)):
-        source = BytesIO(source)
-    with Image.open(source) as img:
-        img.load()
-        return to_rgb(img)
-
-
-def anchor_crop_square(img: Image.Image, anchor: float = 0.5) -> Image.Image:
-    """Square crop along the long axis. anchor 0 = top/left, 0.5 = centre, 1 = bottom/right."""
-    if img.width == img.height:
-        return img
-    if abs(anchor - 0.5) < 1e-6:
-        return engine.centre_crop_square(img)
-    side = min(img.width, img.height)
-    if img.width > img.height:
-        x = int(round((img.width - side) * anchor))
-        return img.crop((x, 0, x + side, side))
-    y = int(round((img.height - side) * anchor))
-    return img.crop((0, y, side, y + side))
-
-
-def format_bytes(n: int) -> str:
-    size = float(n)
-    for unit in ("B", "KB", "MB", "GB"):
-        if size < 1024 or unit == "GB":
-            return f"{size:.0f} {unit}" if unit in ("B", "KB") else f"{size:.1f} {unit}"
-        size /= 1024
-    return f"{n} B"
-
-
-def humanize_age(ts: int) -> str:
-    if not ts:
-        return "never"
-    delta = max(0, int(time.time()) - int(ts))
-    if delta < 60:
-        return "just now"
-    if delta < 3600:
-        return f"{delta // 60} min ago"
-    if delta < 86400:
-        return f"{delta // 3600} h ago"
-    days = delta // 86400
-    return "yesterday" if days == 1 else f"{days} days ago"
-
-
-def is_url(text: str) -> bool:
-    return bool(re.match(r"^https?://\S+$", (text or "").strip(), re.IGNORECASE))
-
-
-def download_image(url: str, timeout: int = 45) -> Image.Image:
-    r = engine.requests.get(url.strip(), timeout=timeout, headers={"User-Agent": USER_AGENT})
-    r.raise_for_status()
-    return load_image(r.content)
-
-
-def open_in_file_manager(folder: Path) -> None:
-    if IS_MAC:
-        os.spawnlp(os.P_NOWAIT, "open", "open", str(folder))
-    elif os.name == "nt":
-        os.startfile(str(folder))  # type: ignore[attr-defined]
-    else:
-        os.spawnlp(os.P_NOWAIT, "xdg-open", "xdg-open", str(folder))
-
-
-def artist_identity_key(value: str) -> str:
-    """Conservative identity key used for virtual artist merging.
-
-    It deliberately ignores accents, case, punctuation and spacing, but does not
-    remove words. This safely merges names such as ``Ali Farka Toure`` and
-    ``Ali Farka Touré`` without fuzzy-merging unrelated artists.
-    """
-    import unicodedata
-
-    value = unicodedata.normalize("NFKD", value or "")
-    value = "".join(ch for ch in value if not unicodedata.combining(ch))
-    value = value.casefold().replace("&", " and ")
-    value = re.sub(r"[^\w\s]+", " ", value, flags=re.UNICODE)
-    return re.sub(r"\s+", " ", value).strip()
-
-
-def display_name_score(value: str) -> tuple[int, int, int, str]:
-    """Prefer informative, nicely-cased Unicode spellings as display names."""
-    import unicodedata
-
-    letters = [ch for ch in value if ch.isalpha()]
-    accents = sum(1 for ch in letters if ord(ch) > 127 and unicodedata.category(ch).startswith("L"))
-    punctuation = sum(1 for ch in value if ch in ".'’/&-")
-    upper_words = sum(1 for word in value.split() if word[:1].isupper())
-    # More accents/punctuation can preserve the canonical spelling; shorter is a useful tie-breaker.
-    return accents, punctuation, upper_words, -len(value), value.casefold()
-
-
-def choose_display_name(values: list[str]) -> str:
-    clean = sorted({(v or "").strip() for v in values if (v or "").strip()})
-    return max(clean, key=display_name_score) if clean else ""
-
-
-def sample_audio_files(folder: Path, limit: int = 3) -> list[Path]:
-    files = [p for p in engine.iter_audio_files(folder)]
-    if len(files) <= limit:
-        return files
-    if limit <= 1:
-        return [files[0]]
-    idxs = sorted({0, len(files) // 2, len(files) - 1})
-    return [files[i] for i in idxs]
-
-
-# ----------------------------------------------------------------------
-# Image shaping (anti-aliased masks, rendered with Pillow)
-# ----------------------------------------------------------------------
-def hex_to_rgb(value: str) -> tuple[int, int, int]:
-    value = value.lstrip("#")
-    return int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16)
-
-
-def blend(c1: str, c2: str, t: float) -> str:
-    a, b = hex_to_rgb(c1), hex_to_rgb(c2)
-    return "#%02x%02x%02x" % tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
-
-
-@lru_cache(maxsize=64)
-def shape_mask(width: int, height: int, shape: str, radius: int) -> Image.Image:
-    ss = 4
-    mask = Image.new("L", (width * ss, height * ss), 0)
-    draw = ImageDraw.Draw(mask)
-    box = (0, 0, width * ss - 1, height * ss - 1)
-    if shape == "circle":
-        draw.ellipse(box, fill=255)
-    else:
-        draw.rounded_rectangle(box, radius=max(0, radius * ss), fill=255)
-    return mask.resize((width, height), Image.Resampling.LANCZOS)
-
-
-def shaped_thumbnail(img: Image.Image, size: int, shape: str, bg: str) -> Image.Image:
-    """Crop-to-fill a square thumbnail and mask it as a circle or rounded square."""
-    fitted = ImageOps.fit(img, (size, size), Image.Resampling.LANCZOS)
-    base = Image.new("RGB", (size, size), bg)
-    base.paste(fitted, (0, 0), shape_mask(size, size, shape, max(4, size // 18)))
-    return base
-
-
-def rounded_fit(img: Image.Image, box: int, bg: str, radius: int = 10) -> Image.Image:
-    """Fit an image inside a square box without cropping, with rounded corners."""
-    fitted = img.copy()
-    fitted.thumbnail((box, box), Image.Resampling.LANCZOS)
-    if fitted.width < box and fitted.height < box:
-        scale = box / max(fitted.width, fitted.height)
-        fitted = img.resize(
-            (max(1, int(img.width * scale)), max(1, int(img.height * scale))),
-            Image.Resampling.LANCZOS,
-        )
-    base = Image.new("RGB", (box, box), bg)
-    x = (box - fitted.width) // 2
-    y = (box - fitted.height) // 2
-    base.paste(fitted, (x, y), shape_mask(fitted.width, fitted.height, "rounded", radius))
-    return base
-
-
-def rounded_panel(width: int, height: int, fill: str, bg: str, radius: int,
-                  border: Optional[str] = None, border_width: float = 0) -> Image.Image:
-    """Anti-aliased rounded rectangle, optionally with a border ring."""
-    ss = 3
-    img = Image.new("RGB", (width * ss, height * ss), bg)
-    draw = ImageDraw.Draw(img)
-    box = (0, 0, width * ss - 1, height * ss - 1)
-    if border and border_width:
-        draw.rounded_rectangle(box, radius=radius * ss, fill=border)
-        inset = int(border_width * ss)
-        draw.rounded_rectangle(
-            (inset, inset, width * ss - 1 - inset, height * ss - 1 - inset),
-            radius=max(0, (radius - border_width) * ss), fill=fill,
-        )
-    else:
-        draw.rounded_rectangle(box, radius=radius * ss, fill=fill)
-    return img.resize((width, height), Image.Resampling.LANCZOS)
-
-
-def placeholder_art(kind: str, variant: str, size: int, fill: str, glyph: str, bg: str) -> Image.Image:
-    """Artwork placeholder: a person for artists, a record for albums."""
-    ss = 4
-    s = size * ss
-    img = Image.new("RGB", (s, s), fill)
-    draw = ImageDraw.Draw(img)
-    if variant != "loading":
-        if kind == "artist":
-            head = s * 0.17
-            cx, cy = s / 2, s * 0.40
-            draw.ellipse((cx - head, cy - head, cx + head, cy + head), fill=glyph)
-            draw.ellipse((s * 0.22, s * 0.62, s * 0.78, s * 1.05), fill=glyph)
-        else:
-            r = s * 0.30
-            c = s / 2
-            w = max(2, int(s * 0.03))
-            draw.ellipse((c - r, c - r, c + r, c + r), outline=glyph, width=w)
-            draw.ellipse((c - r * 0.62, c - r * 0.62, c + r * 0.62, c + r * 0.62), outline=glyph, width=max(1, w // 2))
-            draw.ellipse((c - r * 0.16, c - r * 0.16, c + r * 0.16, c + r * 0.16), fill=glyph)
-    img = img.resize((size, size), Image.Resampling.LANCZOS)
-    base = Image.new("RGB", (size, size), bg)
-    shape = "circle" if kind == "artist" else "rounded"
-    base.paste(img, (0, 0), shape_mask(size, size, shape, max(4, size // 18)))
-    return base
-
-
-def app_icon_image(accent: str) -> Image.Image:
-    ss = 4
-    s = 64 * ss
-    img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    draw.rounded_rectangle((0, 0, s - 1, s - 1), radius=14 * ss, fill=accent)
-    c = s / 2
-    for r, fill in ((0.34, "#10131a"), (0.13, accent), (0.045, "#10131a")):
-        draw.ellipse((c - s * r, c - s * r, c + s * r, c + s * r), fill=fill)
-    return img.resize((64, 64), Image.Resampling.LANCZOS)
-
-
-
-# ----------------------------------------------------------------------
-# Safe artist-folder consolidation
-# ----------------------------------------------------------------------
-def _safe_fragment(value: str) -> str:
-    value = re.sub(r'[<>:"/\\|?*]+', "_", value or "")
-    value = re.sub(r"\s+", " ", value).strip().rstrip(". ")
-    return value or "alias"
-
-
-def _files_identical(a: Path, b: Path) -> bool:
-    try:
-        if a.stat().st_size != b.stat().st_size:
-            return False
-        with a.open("rb") as fa, b.open("rb") as fb:
-            while True:
-                ca = fa.read(1024 * 1024)
-                cb = fb.read(1024 * 1024)
-                if ca != cb:
-                    return False
-                if not ca:
-                    return True
-    except OSError:
-        return False
-
-
-def _unique_sibling(path: Path) -> Path:
-    if not path.exists():
-        return path
-    stem, suffix = path.stem, path.suffix
-    for n in range(2, 10000):
-        candidate = path.with_name(f"{stem}.{n}{suffix}")
-        if not candidate.exists():
-            return candidate
-    raise RuntimeError(f"Could not make a unique backup name near {path}")
-
-
-def consolidate_artist_folders(
-    root: Path,
-    physical_items: list[LibraryItem] | list[Any],
-    canonical: str,
-    *,
-    output_name: str = "folder.jpg",
-    retag_albumartist: bool = False,
-    progress: Optional[Callable[[str], None]] = None,
-) -> dict[str, Any]:
-    """Safely merge physical artist folders into the selected canonical folder.
-
-    Nothing is overwritten. A complete preflight is done before any move. Album
-    directory collisions and conflicting root-level files abort the operation
-    without changing the library. Different artist artwork is preserved beside
-    the canonical ``folder.jpg`` under a unique alias-specific filename.
-    """
-    progress = progress or (lambda _text: None)
-    root = Path(root)
-    rows = [i for i in physical_items if getattr(i, "relative_path", "")]
-    if len(rows) < 2:
-        return {"ok": False, "error": "Fewer than two physical artist folders were found."}
-
-    target_item = next((i for i in rows if str(getattr(i, "artist", "")) == canonical), None)
-    if target_item is None:
-        target_item = next((i for i in rows if str(getattr(i, "artist", "")).casefold() == canonical.casefold()), None)
-    if target_item is None:
-        return {"ok": False, "error": "The selected display name is not one of the physical artist folders."}
-
-    target = root / Path(str(target_item.relative_path))
-    if not target.is_dir():
-        return {"ok": False, "error": f"Target artist folder does not exist: {target}"}
-
-    sources: list[tuple[Any, Path]] = []
-    for item in rows:
-        if str(item.relative_path) == str(target_item.relative_path):
-            continue
-        path = root / Path(str(item.relative_path))
-        if path.is_dir():
-            sources.append((item, path))
-    if not sources:
-        return {"ok": False, "error": "No source artist folders remain to merge."}
-
-    # Preflight first: never start a partial merge when album/file collisions exist.
-    conflicts: list[str] = []
-    ignorable = {".ds_store", "thumbs.db", "desktop.ini"}
-    configured_art_name = output_name or "folder.jpg"
-    for item, source in sources:
-        source_art_name = (str(getattr(item, "artwork_name", "")) if getattr(item, "artwork_exists", False) else configured_art_name) or configured_art_name
-        source_art_cf = source_art_name.casefold()
-        for child in source.iterdir():
-            destination = target / child.name
-            if child.name.casefold() == source_art_cf and child.is_file():
-                continue
-            if child.name.casefold() in ignorable and child.is_file():
-                continue
-            if destination.exists():
-                if child.is_file() and destination.is_file() and _files_identical(child, destination):
-                    continue
-                conflicts.append(f"{source.name} / {child.name}")
-    if conflicts:
-        return {
-            "ok": False,
-            "conflicts": conflicts,
-            "error": "Nothing was changed because destination names already exist.",
-        }
-
-    moved_entries = 0
-    preserved_artwork: list[str] = []
-    removed_sources: list[str] = []
-
-    for item, source in sources:
-        progress(f"Merging {source.name} into {target.name}")
-        source_art_name = (str(getattr(item, "artwork_name", "")) if getattr(item, "artwork_exists", False) else configured_art_name) or configured_art_name
-        source_art_cf = source_art_name.casefold()
-        for child in list(source.iterdir()):
-            destination = target / child.name
-            low = child.name.casefold()
-
-            if child.is_file() and low == source_art_cf:
-                target_art_name = (str(getattr(target_item, "artwork_name", "")) if getattr(target_item, "artwork_exists", False) else configured_art_name) or configured_art_name
-                target_art = target / target_art_name
-                if not target_art.exists():
-                    shutil.move(str(child), str(target_art))
-                    moved_entries += 1
-                elif _files_identical(child, target_art):
-                    child.unlink()
-                else:
-                    suffix = child.suffix or target_art.suffix or ".jpg"
-                    backup = target / f"folder.merged-{_safe_fragment(str(getattr(item, 'artist', source.name)))}{suffix}"
-                    backup = _unique_sibling(backup)
-                    shutil.move(str(child), str(backup))
-                    preserved_artwork.append(backup.name)
-                    moved_entries += 1
-                continue
-
-            if child.is_file() and low in ignorable:
-                try:
-                    child.unlink()
-                except OSError:
-                    pass
-                continue
-
-            if destination.exists() and child.is_file() and destination.is_file() and _files_identical(child, destination):
-                child.unlink()
-                continue
-
-            shutil.move(str(child), str(destination))
-            moved_entries += 1
-
-        try:
-            source.rmdir()
-            removed_sources.append(source.name)
-        except OSError:
-            # Non-destructive fallback: leave anything unexpected behind and report it.
-            pass
-
-    tag_changed = 0
-    tag_failed: list[str] = []
-    if retag_albumartist:
-        progress(f"Updating ALBUMARTIST to {canonical}")
-        for audio_path in engine.iter_audio_files(target):
-            try:
-                audio = engine.MutagenFile(str(audio_path), easy=True)
-                if audio is None:
-                    raise RuntimeError("unsupported metadata")
-                audio["albumartist"] = [canonical]
-                audio.save()
-                tag_changed += 1
-            except Exception as exc:
-                tag_failed.append(f"{audio_path.name}: {exc}")
-
-    return {
-        "ok": True,
-        "target": str(target),
-        "moved_entries": moved_entries,
-        "folder_moves": [[str(source.resolve()), str(target.resolve())] for _item, source in sources],
-        "removed_sources": removed_sources,
-        "preserved_artwork": preserved_artwork,
-        "tag_changed": tag_changed,
-        "tag_failed": tag_failed,
-    }
-
-
-# ----------------------------------------------------------------------
-# Library model + SQLite index
-# ----------------------------------------------------------------------
-@dataclass
-class LibraryItem:
-    id: int
-    kind: str
-    artist: str
-    album: str
-    relative_path: str
-    artwork_name: str
-    artwork_exists: bool
-    artwork_mtime_ns: int
-    artwork_size: int
-    problem: str
-    group_paths: tuple[str, ...] = ()
-    aliases: tuple[str, ...] = ()
-    group_missing_paths: tuple[str, ...] = ()
-    artwork_relative_path: str = ""
-
-    @property
-    def title(self) -> str:
-        return self.artist if self.kind == "artist" else self.album
-
-    @property
-    def subtitle(self) -> str:
-        return "Artist" if self.kind == "artist" else self.artist
-
-    @property
-    def status(self) -> str:
-        if self.problem:
-            return "Problem"
-        return "Existing" if self.artwork_exists else "Missing"
-
-    @property
-    def status_label(self) -> str:
-        return {"Problem": "Problem", "Existing": "Has artwork", "Missing": "Missing"}[self.status]
-
-
-class LibraryDB:
-    """SQLite-backed physical index with a cached virtual/canonical library view.
-
-    The database always keeps one row per real artist/album folder. Artist identity
-    merging happens only in the cached virtual view, so filesystem state remains
-    explicit and artwork can never be hidden by a merged card.
-    """
-
-    def __init__(self, path: Path) -> None:
-        self.path = path
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.lock = threading.RLock()
-        self.conn = sqlite3.connect(self.path, check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
-        self._view_cache: Optional[list[LibraryItem]] = None
-        self._view_by_id: dict[int, LibraryItem] = {}
-        self._search_blob_cache: dict[int, str] = {}
-        self._album_counts_cache: Optional[dict[str, int]] = None
-        self._init_schema()
-
-    def _init_schema(self) -> None:
-        with self.lock, self.conn:
-            self.conn.executescript(
-                """
-                PRAGMA journal_mode=WAL;
-                PRAGMA synchronous=NORMAL;
-
-                CREATE TABLE IF NOT EXISTS meta (
-                    key TEXT PRIMARY KEY,
-                    value TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS items (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    kind TEXT NOT NULL CHECK(kind IN ('artist', 'album')),
-                    artist TEXT NOT NULL,
-                    album TEXT NOT NULL DEFAULT '',
-                    relative_path TEXT NOT NULL,
-                    artwork_name TEXT NOT NULL DEFAULT 'folder.jpg',
-                    artwork_exists INTEGER NOT NULL DEFAULT 0,
-                    artwork_mtime_ns INTEGER NOT NULL DEFAULT 0,
-                    artwork_size INTEGER NOT NULL DEFAULT 0,
-                    problem TEXT NOT NULL DEFAULT '',
-                    last_seen_scan INTEGER NOT NULL DEFAULT 0,
-                    UNIQUE(kind, relative_path)
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_items_kind ON items(kind);
-                CREATE INDEX IF NOT EXISTS idx_items_exists ON items(artwork_exists);
-                CREATE INDEX IF NOT EXISTS idx_items_artist ON items(artist COLLATE NOCASE);
-                CREATE INDEX IF NOT EXISTS idx_items_album ON items(album COLLATE NOCASE);
-                CREATE INDEX IF NOT EXISTS idx_items_problem ON items(problem);
-
-                CREATE TABLE IF NOT EXISTS artist_aliases (
-                    alias TEXT PRIMARY KEY COLLATE NOCASE,
-                    canonical TEXT NOT NULL
-                );
-
-                -- Exact artist names in this table are deliberately excluded from
-                -- automatic identity merging. COLLATE BINARY is important: Sophie
-                -- and SOPHIE can be distinct artists.
-                CREATE TABLE IF NOT EXISTS artist_auto_merge_disabled (
-                    artist TEXT PRIMARY KEY COLLATE BINARY
-                );
-
-                CREATE TABLE IF NOT EXISTS health_issues (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    issue_type TEXT NOT NULL,
-                    severity TEXT NOT NULL DEFAULT 'warn',
-                    artist TEXT NOT NULL DEFAULT '',
-                    album TEXT NOT NULL DEFAULT '',
-                    relative_path TEXT NOT NULL DEFAULT '',
-                    details TEXT NOT NULL DEFAULT '',
-                    data_json TEXT NOT NULL DEFAULT '{}',
-                    last_seen_scan INTEGER NOT NULL DEFAULT 0
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_health_type ON health_issues(issue_type);
-                CREATE INDEX IF NOT EXISTS idx_health_path ON health_issues(relative_path);
-                """
-            )
-
-    def invalidate_view_cache(self) -> None:
-        with self.lock:
-            self._view_cache = None
-            self._view_by_id = {}
-            self._search_blob_cache = {}
-            self._album_counts_cache = None
-
-    def set_meta(self, key: str, value: str) -> None:
-        with self.lock, self.conn:
-            self.conn.execute(
-                "INSERT INTO meta(key, value) VALUES(?, ?) "
-                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-                (key, value),
-            )
-
-    def get_meta(self, key: str, default: str = "") -> str:
-        with self.lock:
-            row = self.conn.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
-        return str(row["value"]) if row else default
-
-    def upsert_item(self, *, kind: str, artist: str, album: str, relative_path: str,
-                    artwork_name: str, artwork_exists: bool, artwork_mtime_ns: int,
-                    artwork_size: int, scan_id: int) -> None:
-        with self.lock, self.conn:
-            self.conn.execute(
-                """
-                INSERT INTO items(
-                    kind, artist, album, relative_path, artwork_name,
-                    artwork_exists, artwork_mtime_ns, artwork_size, last_seen_scan
-                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(kind, relative_path) DO UPDATE SET
-                    artist=excluded.artist,
-                    album=excluded.album,
-                    artwork_name=excluded.artwork_name,
-                    artwork_exists=excluded.artwork_exists,
-                    artwork_mtime_ns=excluded.artwork_mtime_ns,
-                    artwork_size=excluded.artwork_size,
-                    last_seen_scan=excluded.last_seen_scan,
-                    problem=CASE
-                        WHEN excluded.artwork_exists=1 THEN ''
-                        ELSE items.problem
-                    END
-                """,
-                (kind, artist, album, relative_path, artwork_name,
-                 1 if artwork_exists else 0, artwork_mtime_ns, artwork_size, scan_id),
-            )
-
-    def finish_scan(self, scan_id: int) -> None:
-        with self.lock, self.conn:
-            self.conn.execute("DELETE FROM items WHERE last_seen_scan <> ?", (scan_id,))
-        self.invalidate_view_cache()
-
-    def clear(self) -> None:
-        with self.lock, self.conn:
-            self.conn.execute("DELETE FROM items")
-            self.conn.execute("DELETE FROM health_issues")
-            self.conn.execute("DELETE FROM meta")
-        self.invalidate_view_cache()
-
-    def alias_map(self) -> dict[str, str]:
-        with self.lock:
-            rows = self.conn.execute("SELECT alias, canonical FROM artist_aliases").fetchall()
-        return {str(r["alias"]).casefold(): str(r["canonical"]) for r in rows}
-
-    def set_artist_aliases(self, aliases: list[str], canonical: str) -> None:
-        canonical = canonical.strip()
-        with self.lock, self.conn:
-            for alias in aliases:
-                alias = alias.strip()
-                if alias:
-                    self.conn.execute(
-                        "INSERT INTO artist_aliases(alias, canonical) VALUES(?, ?) "
-                        "ON CONFLICT(alias) DO UPDATE SET canonical=excluded.canonical",
-                        (alias, canonical),
-                    )
-        self.invalidate_view_cache()
-
-    def auto_merge_disabled(self) -> set[str]:
-        with self.lock:
-            rows = self.conn.execute("SELECT artist FROM artist_auto_merge_disabled").fetchall()
-        return {str(r["artist"]) for r in rows}
-
-    def set_artist_auto_merge(self, aliases: list[str], enabled: bool) -> None:
-        clean = sorted({str(a).strip() for a in aliases if str(a).strip()})
-        with self.lock, self.conn:
-            if enabled:
-                self.conn.executemany(
-                    "DELETE FROM artist_auto_merge_disabled WHERE artist=? COLLATE BINARY",
-                    [(a,) for a in clean],
-                )
-            else:
-                self.conn.executemany(
-                    "INSERT OR IGNORE INTO artist_auto_merge_disabled(artist) VALUES(?)",
-                    [(a,) for a in clean],
-                )
-        self.invalidate_view_cache()
-
-    def _artist_resolution(self, names: list[str]) -> dict[str, tuple[str, str]]:
-        """Return original name -> (group key, display name)."""
-        explicit = self.alias_map()
-        disabled = self.auto_merge_disabled()
-        provisional: dict[str, tuple[str, str]] = {}
-        group_values: dict[str, list[str]] = {}
-        for name in names:
-            if name in disabled:
-                # Exact/BINARY key prevents Sophie and SOPHIE from being folded.
-                group_key = "exact\0" + name
-                shown = name
-            else:
-                shown = explicit.get(name.casefold(), name)
-                group_key = "auto\0" + artist_identity_key(shown)
-            provisional[name] = (group_key, shown)
-            group_values.setdefault(group_key, []).append(shown)
-        canonical = {key: choose_display_name(vals) for key, vals in group_values.items()}
-        return {name: (key, canonical.get(key, shown)) for name, (key, shown) in provisional.items()}
-
-    def artist_name_map(self) -> dict[str, str]:
-        with self.lock:
-            rows = self.conn.execute("SELECT DISTINCT artist FROM items WHERE artist<>''").fetchall()
-        names = [str(r["artist"]) for r in rows]
-        return {name: display for name, (_key, display) in self._artist_resolution(names).items()}
-
-    def replace_health_issues(self, issues: list[dict[str, Any]], scan_id: int) -> None:
-        with self.lock, self.conn:
-            self.conn.execute("DELETE FROM health_issues")
-            self.conn.executemany(
-                "INSERT INTO health_issues(issue_type,severity,artist,album,relative_path,details,data_json,last_seen_scan) "
-                "VALUES(?,?,?,?,?,?,?,?)",
-                [(i.get("issue_type", ""), i.get("severity", "warn"), i.get("artist", ""),
-                  i.get("album", ""), i.get("relative_path", ""), i.get("details", ""),
-                  json.dumps(i.get("data", {}), ensure_ascii=False), scan_id) for i in issues],
-            )
-            self.set_meta("last_health_scan", str(int(time.time())))
-
-    def health_counts(self) -> dict[str, int]:
-        out = {"all": 0, "duplicate_artist": 0, "tag_mismatch": 0, "inconsistent_album": 0, "missing_tags": 0}
-        with self.lock:
-            rows = self.conn.execute("SELECT issue_type, COUNT(*) AS n FROM health_issues GROUP BY issue_type").fetchall()
-        for row in rows:
-            key, n = str(row["issue_type"]), int(row["n"] or 0)
-            out[key] = n
-            out["all"] += n
-        return out
-
-    def health_issues(self, issue_type: str = "all") -> list[sqlite3.Row]:
-        with self.lock:
-            if issue_type == "all":
-                return self.conn.execute("SELECT * FROM health_issues ORDER BY issue_type, artist COLLATE NOCASE, album COLLATE NOCASE").fetchall()
-            return self.conn.execute("SELECT * FROM health_issues WHERE issue_type=? ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE", (issue_type,)).fetchall()
-
-    def get_health_issue(self, issue_id: int) -> Optional[sqlite3.Row]:
-        with self.lock:
-            return self.conn.execute("SELECT * FROM health_issues WHERE id=?", (issue_id,)).fetchone()
-
-    def delete_health_issue(self, issue_id: int) -> None:
-        with self.lock, self.conn:
-            self.conn.execute("DELETE FROM health_issues WHERE id=?", (int(issue_id),))
-
-    def physical_items(self, kind: Optional[str] = None) -> list[LibraryItem]:
-        with self.lock:
-            if kind in {"artist", "album"}:
-                rows = self.conn.execute(
-                    "SELECT * FROM items WHERE kind=? ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE",
-                    (kind,),
-                ).fetchall()
-            else:
-                rows = self.conn.execute(
-                    "SELECT * FROM items ORDER BY artist COLLATE NOCASE, kind, album COLLATE NOCASE"
-                ).fetchall()
-        return [self._row_to_item(r) for r in rows]
-
-    def items_for_paths(self, paths: tuple[str, ...] | list[str], *, kind: Optional[str] = None) -> list[LibraryItem]:
-        clean = [str(p) for p in paths if str(p)]
-        if not clean:
-            return []
-        marks = ",".join("?" for _ in clean)
-        params: list[Any] = list(clean)
-        sql = f"SELECT * FROM items WHERE relative_path IN ({marks})"
-        if kind in {"artist", "album"}:
-            sql += " AND kind=?"
-            params.append(kind)
-        with self.lock:
-            rows = self.conn.execute(sql, params).fetchall()
-        by_path = {str(r["relative_path"]): self._row_to_item(r) for r in rows}
-        return [by_path[p] for p in clean if p in by_path]
-
-    @staticmethod
-    def _search_blob(item: LibraryItem) -> str:
-        # Same accent/case/punctuation normalization used for artist identity also
-        # gives predictable Unicode-insensitive search (BJÖRK -> bjork).
-        aliases = " ".join(item.aliases)
-        return artist_identity_key(f"{item.artist} {item.album} {aliases}")
-
-    def _build_view_cache(self) -> list[LibraryItem]:
-        # Keep construction *and* publication of the cache under the same RLock.
-        # Without this, another worker can invalidate the cache between publication
-        # and get_item(), producing a spurious None even though the item still exists.
-        with self.lock:
-            rows = self.conn.execute(
-                "SELECT * FROM items ORDER BY artist COLLATE NOCASE, CASE WHEN kind='artist' THEN 0 ELSE 1 END, album COLLATE NOCASE"
-            ).fetchall()
-            raw = [self._row_to_item(row) for row in rows]
-            names = sorted({i.artist for i in raw if i.artist}, key=str.casefold)
-            resolution = self._artist_resolution(names)
-
-            albums: list[LibraryItem] = []
-            artist_groups: dict[str, list[LibraryItem]] = {}
-            for item in raw:
-                group_key, canonical = resolution.get(
-                    item.artist,
-                    ("auto\0" + artist_identity_key(item.artist), item.artist),
-                )
-                if item.kind == "album":
-                    albums.append(replace(item, artist=canonical))
-                else:
-                    artist_groups.setdefault(group_key, []).append(item)
-
-            artists: list[LibraryItem] = []
-            for group_key, group in artist_groups.items():
-                _unused, canonical = resolution.get(group[0].artist, (group_key, group[0].artist))
-                # Representative ID/path is stable and independent of artwork state.
-                rep = sorted(
-                    group,
-                    key=lambda i: (i.artist.casefold() != canonical.casefold(), i.relative_path.casefold()),
-                )[0]
-                aliases = tuple(sorted({i.artist for i in group}, key=lambda x: (x.casefold(), x)))
-                paths = tuple(i.relative_path for i in sorted(group, key=lambda x: x.relative_path.casefold()))
-                missing_paths = tuple(i.relative_path for i in group if not i.artwork_exists)
-                art_items = [i for i in group if i.artwork_exists]
-                art_rep = sorted(
-                    art_items,
-                    key=lambda i: (i.artist.casefold() != canonical.casefold(), i.relative_path.casefold()),
-                )[0] if art_items else rep
-                all_have_art = bool(group) and not missing_paths
-                problem = next((i.problem for i in group if i.problem), "")
-                artists.append(replace(
-                    rep,
-                    artist=canonical,
-                    artwork_name=art_rep.artwork_name,
-                    artwork_exists=all_have_art,
-                    artwork_mtime_ns=art_rep.artwork_mtime_ns if art_items else 0,
-                    artwork_size=art_rep.artwork_size if art_items else 0,
-                    aliases=aliases,
-                    group_paths=paths,
-                    group_missing_paths=missing_paths,
-                    artwork_relative_path=art_rep.relative_path if art_items else "",
-                    problem=problem,
-                ))
-
-            out = artists + albums
-            out.sort(key=lambda i: (i.artist.casefold(), 0 if i.kind == "artist" else 1, i.album.casefold()))
-            self._view_cache = out
-            self._view_by_id = {i.id: i for i in out}
-            self._search_blob_cache = {i.id: self._search_blob(i) for i in out}
-            counts: dict[str, int] = {}
-            for i in albums:
-                counts[i.artist] = counts.get(i.artist, 0) + 1
-            self._album_counts_cache = counts
-            return out
-
-    def canonical_items(self) -> list[LibraryItem]:
-        with self.lock:
-            if self._view_cache is None:
-                self._build_view_cache()
-            return list(self._view_cache or [])
-
-    def counts(self, kind_filter: str = "All") -> dict[str, int]:
-        items = self.canonical_items()
-        if kind_filter == "Artists":
-            items = [i for i in items if i.kind == "artist"]
-        elif kind_filter == "Albums":
-            items = [i for i in items if i.kind == "album"]
-        return {
-            "total": len(items),
-            "artists": sum(1 for i in items if i.kind == "artist"),
-            "albums": sum(1 for i in items if i.kind == "album"),
-            "existing": sum(1 for i in items if i.status == "Existing"),
-            "missing": sum(1 for i in items if i.status == "Missing"),
-            "problems": sum(1 for i in items if i.status == "Problem"),
-        }
-
-    def query_all(self, *, kind_filter: str = "All", status_filter: str = "All",
-                  search: str = "") -> list[LibraryItem]:
-        # Merge identities first, then filter/search. This prevents search text from
-        # changing which physical folder becomes the virtual artist card.
-        with self.lock:
-            if self._view_cache is None:
-                self._build_view_cache()
-            items = list(self._view_cache or [])
-            blobs = dict(self._search_blob_cache)
-        if kind_filter == "Artists":
-            items = [i for i in items if i.kind == "artist"]
-        elif kind_filter == "Albums":
-            items = [i for i in items if i.kind == "album"]
-        if status_filter == "Existing":
-            items = [i for i in items if i.status == "Existing"]
-        elif status_filter == "Missing":
-            items = [i for i in items if i.status == "Missing"]
-        elif status_filter == "Problems":
-            items = [i for i in items if i.status == "Problem"]
-        words = [artist_identity_key(w) for w in (search or "").split() if artist_identity_key(w)]
-        if words:
-            items = [i for i in items if all(w in blobs.get(i.id, "") for w in words)]
-        return list(items)
-
-    def query_items(self, *, kind_filter: str = "All", status_filter: str = "All",
-                    search: str = "", limit: int = DEFAULT_PAGE_SIZE,
-                    offset: int = 0) -> tuple[list[LibraryItem], int]:
-        items = self.query_all(kind_filter=kind_filter, status_filter=status_filter, search=search)
-        return items[offset:offset + limit], len(items)
-
-    def album_counts(self) -> dict[str, int]:
-        with self.lock:
-            if self._album_counts_cache is None:
-                self._build_view_cache()
-            return dict(self._album_counts_cache or {})
-
-    def get_item(self, item_id: int) -> Optional[LibraryItem]:
-        with self.lock:
-            if self._view_cache is None:
-                self._build_view_cache()
-            return self._view_by_id.get(int(item_id))
-
-    def refresh_cached_item(self, item_id: int) -> Optional[LibraryItem]:
-        """Patch one virtual item after an artwork-only database update.
-
-        Batch artwork fetches update physical rows one item at a time. Rebuilding
-        the complete canonical view after every item defeats the cache, but leaving
-        it untouched means cards cannot update live. This method updates just the
-        affected album or merged artist while holding the cache lock.
-        """
-        with self.lock:
-            if self._view_cache is None:
-                self._build_view_cache()
-            old = self._view_by_id.get(int(item_id))
-            if old is None:
-                return None
-
-            if old.kind == "album":
-                row = self.conn.execute("SELECT * FROM items WHERE id=?", (old.id,)).fetchone()
-                if row is None:
-                    return None
-                raw = self._row_to_item(row)
-                new = replace(raw, artist=old.artist)
-            else:
-                paths = old.group_paths or (old.relative_path,)
-                marks = ",".join("?" for _ in paths)
-                rows = self.conn.execute(
-                    f"SELECT * FROM items WHERE kind='artist' AND relative_path IN ({marks})",
-                    list(paths),
-                ).fetchall()
-                group = [self._row_to_item(r) for r in rows]
-                if not group:
-                    return None
-                by_path = {i.relative_path: i for i in group}
-                ordered = [by_path[p] for p in paths if p in by_path]
-                rep = next((i for i in ordered if i.id == old.id), ordered[0])
-                missing_paths = tuple(i.relative_path for i in ordered if not i.artwork_exists)
-                art_items = [i for i in ordered if i.artwork_exists]
-                art_rep = None
-                if old.artwork_relative_path:
-                    art_rep = next((i for i in art_items if i.relative_path == old.artwork_relative_path), None)
-                if art_rep is None and art_items:
-                    art_rep = art_items[0]
-                all_have_art = bool(ordered) and not missing_paths
-                problem = next((i.problem for i in ordered if i.problem), "")
-                new = replace(
-                    rep,
-                    artist=old.artist,
-                    aliases=old.aliases,
-                    group_paths=old.group_paths,
-                    group_missing_paths=missing_paths,
-                    artwork_name=(art_rep.artwork_name if art_rep else rep.artwork_name),
-                    artwork_exists=all_have_art,
-                    artwork_mtime_ns=(art_rep.artwork_mtime_ns if art_rep else 0),
-                    artwork_size=(art_rep.artwork_size if art_rep else 0),
-                    artwork_relative_path=(art_rep.relative_path if art_rep else ""),
-                    problem=problem,
-                )
-
-            for idx, cached in enumerate(self._view_cache or []):
-                if cached.id == old.id:
-                    self._view_cache[idx] = new  # type: ignore[index]
-                    break
-            self._view_by_id[old.id] = new
-            self._search_blob_cache[old.id] = self._search_blob(new)
-            return new
-
-    def set_item_state(self, item_id: int, *, artwork_name: Optional[str] = None,
-                       artwork_exists: Optional[bool] = None,
-                       artwork_mtime_ns: Optional[int] = None,
-                       artwork_size: Optional[int] = None,
-                       problem: Optional[str] = None) -> None:
-        fields: list[str] = []
-        params: list[Any] = []
-        mapping = {
-            "artwork_name": artwork_name,
-            "artwork_exists": None if artwork_exists is None else (1 if artwork_exists else 0),
-            "artwork_mtime_ns": artwork_mtime_ns,
-            "artwork_size": artwork_size,
-            "problem": problem,
-        }
-        for key, value in mapping.items():
-            if value is not None:
-                fields.append(f"{key}=?")
-                params.append(value)
-        if not fields:
-            return
-        params.append(item_id)
-        with self.lock, self.conn:
-            self.conn.execute(f"UPDATE items SET {', '.join(fields)} WHERE id=?", params)
-        self.invalidate_view_cache()
-
-    def set_item_states_bulk(self, updates: list[tuple[int, dict[str, Any]]], *, invalidate: bool = True) -> None:
-        if not updates:
-            return
-        with self.lock, self.conn:
-            for item_id, values in updates:
-                fields: list[str] = []
-                params: list[Any] = []
-                for key in ("artwork_name", "artwork_exists", "artwork_mtime_ns", "artwork_size", "problem"):
-                    if key not in values:
-                        continue
-                    value = values[key]
-                    if key == "artwork_exists":
-                        value = 1 if value else 0
-                    fields.append(f"{key}=?")
-                    params.append(value)
-                if fields:
-                    params.append(int(item_id))
-                    self.conn.execute(f"UPDATE items SET {', '.join(fields)} WHERE id=?", params)
-        if invalidate:
-            self.invalidate_view_cache()
-
-    def missing_items(self, kind_filter: str = "All", search: str = "") -> list[LibraryItem]:
-        return self.query_all(kind_filter=kind_filter, status_filter="Missing", search=search)
-
-    @staticmethod
-    def _row_to_item(row: sqlite3.Row) -> LibraryItem:
-        return LibraryItem(
-            id=int(row["id"]),
-            kind=str(row["kind"]),
-            artist=str(row["artist"]),
-            album=str(row["album"]),
-            relative_path=str(row["relative_path"]),
-            artwork_name=str(row["artwork_name"]),
-            artwork_exists=bool(row["artwork_exists"]),
-            artwork_mtime_ns=int(row["artwork_mtime_ns"] or 0),
-            artwork_size=int(row["artwork_size"] or 0),
-            problem=str(row["problem"] or ""),
-        )
-
-class FastLibraryScanner:
-    """Directory-only scanner designed for slower removable devices."""
-
-    def __init__(self, db: LibraryDB, root: Path, output_name: str,
-                 progress: Callable[[int, int, str], None],
-                 cancel: Optional[threading.Event] = None) -> None:
-        self.db = db
-        self.root = root
-        self.output_name = output_name
-        self.progress = progress
-        self.cancel = cancel or threading.Event()
-
-    def scan(self) -> dict[str, int]:
-        scan_id = time.time_ns()
-        artists = albums = missing = errors = 0
-
-        self.db.set_meta("music_root", str(self.root))
-        self.db.set_meta("output_name", self.output_name)
-        self.db.set_meta("scan_started", str(int(time.time())))
-
-        artist_dirs = immediate_subdirs(self.root)
-        total_dirs = len(artist_dirs)
-
-        for index, artist_dir in enumerate(artist_dirs, start=1):
-            if self.cancel.is_set():
-                # Leave the previous index intact; unseen rows are only pruned on a full scan.
-                self.db.invalidate_view_cache()
-                return {"artists": artists, "albums": albums, "missing": missing,
-                        "errors": errors, "cancelled": 1}
-            self.progress(index, total_dirs, artist_dir.name)
-            try:
-                album_dirs = immediate_subdirs(artist_dir)
-                usable_albums = [d for d in album_dirs if contains_audio_immediate(d)]
-                has_direct_artist_audio = contains_audio_immediate(artist_dir)
-                if not usable_albums and not has_direct_artist_audio:
-                    continue
-
-                rel_artist = artist_dir.relative_to(self.root).as_posix()
-                exists, art_name, mtime_ns, art_size = detect_artwork(artist_dir, self.output_name)
-                self.db.upsert_item(kind="artist", artist=artist_dir.name, album="",
-                                    relative_path=rel_artist, artwork_name=art_name,
-                                    artwork_exists=exists, artwork_mtime_ns=mtime_ns,
-                                    artwork_size=art_size, scan_id=scan_id)
-                artists += 1
-                missing += 0 if exists else 1
-
-                for album_dir in usable_albums:
-                    rel_album = album_dir.relative_to(self.root).as_posix()
-                    exists, art_name, mtime_ns, art_size = detect_artwork(album_dir, self.output_name)
-                    self.db.upsert_item(kind="album", artist=artist_dir.name, album=album_dir.name,
-                                        relative_path=rel_album, artwork_name=art_name,
-                                        artwork_exists=exists, artwork_mtime_ns=mtime_ns,
-                                        artwork_size=art_size, scan_id=scan_id)
-                    albums += 1
-                    missing += 0 if exists else 1
-            except Exception:
-                errors += 1
-
-        self.db.finish_scan(scan_id)
-        self.db.set_meta("last_scan", str(int(time.time())))
-        return {"artists": artists, "albums": albums, "missing": missing, "errors": errors, "cancelled": 0}
-
-
-class HealthScanner:
-    """Tag-aware analysis over the *indexed* physical library.
-
-    Using the existing index keeps Health in lockstep with the normal scan and
-    avoids recursively discovering the same folders a second time.
-    """
-
-    def __init__(self, db: LibraryDB, root: Path, progress: Callable[[int, int, str], None],
-                 cancel: Optional[threading.Event] = None) -> None:
-        self.db = db
-        self.root = root
-        self.progress = progress
-        self.cancel = cancel or threading.Event()
-
-    @staticmethod
-    def _sample_files(files: list[Path], limit: int = 3) -> list[Path]:
-        if len(files) <= limit:
-            return files
-        return [files[0], files[len(files) // 2], files[-1]]
-
-    def scan(self) -> dict[str, int]:
-        issues: list[dict[str, Any]] = []
-        scan_id = time.time_ns()
-
-        # Duplicate detection is based on the physical artist rows in the same
-        # index used by the gallery. A duplicate can remain deliberately split.
-        artist_items = self.db.physical_items("artist")
-        groups: dict[str, list[LibraryItem]] = {}
-        for item in artist_items:
-            groups.setdefault(artist_identity_key(item.artist), []).append(item)
-        explicit = self.db.alias_map()
-        disabled = self.db.auto_merge_disabled()
-        for group in groups.values():
-            names = [i.artist for i in group]
-            if len(set(names)) < 2:
-                continue
-            # "Keep separate" is a resolved identity decision, not a recurring
-            # health problem. Do not re-add it on every analysis pass.
-            if any(n in disabled for n in names):
-                continue
-
-            # An explicit library merge is also a resolved decision. Automatic
-            # normalization may discover Toure/Touré every scan, but once the
-            # user has deliberately mapped every physical alias to one canonical
-            # name it should not keep appearing as a Health problem.
-            explicit_targets = [explicit.get(n.casefold()) for n in names]
-            if explicit_targets and all(explicit_targets) and len({x.casefold() for x in explicit_targets if x}) == 1:
-                continue
-
-            canonical = choose_display_name([
-                explicit.get(n.casefold(), n) for n in names
-            ])
-            paths = [i.relative_path for i in group]
-            issues.append({
-                "issue_type": "duplicate_artist", "severity": "info", "artist": canonical,
-                "relative_path": paths[0],
-                "details": f"{len(paths)} artist folders normalize to the same identity (auto-merged): " + " / ".join(names),
-                "data": {"aliases": names, "canonical": canonical, "paths": paths,
-                         "auto_merge_enabled": True},
-            })
-
-        # Analyze exactly the album folders already accepted by the normal scan.
-        album_items = self.db.physical_items("album")
-        total = len(album_items)
-        for index, item in enumerate(album_items, start=1):
-            if self.cancel.is_set():
-                return {"cancelled": 1, "issues": len(issues)}
-            album_dir = self.root / Path(item.relative_path)
-            self.progress(index, total, f"{item.artist} - {item.album}")
-
-            # One recursive walk per album, then sample from that list. This keeps
-            # multi-disc files usable without discovering CD1/CD2 as extra albums.
-            files = list(engine.iter_audio_files(album_dir))
-            samples = self._sample_files(files, 3)
-            if not samples:
-                continue
-            tags = [engine.read_tags(p) for p in samples]
-            rel = item.relative_path
-            missing = [t for t in tags if t.error or not t.album or not (t.album_artist or t.artist)]
-            if missing:
-                fields: list[str] = []
-                if any(not t.album for t in tags):
-                    fields.append("album")
-                if any(not (t.album_artist or t.artist) for t in tags):
-                    fields.append("artist/album artist")
-                if any(t.error for t in tags):
-                    fields.append("unreadable metadata")
-                issues.append({"issue_type": "missing_tags", "severity": "bad",
-                               "artist": item.artist, "album": item.album, "relative_path": rel,
-                               "details": "Missing or unreadable: " + ", ".join(fields),
-                               "data": {"samples": [p.name for p in samples]}})
-                continue
-
-            albums = sorted({t.album.strip() for t in tags if t.album.strip()}, key=str.casefold)
-            aas = sorted({t.album_artist.strip() for t in tags if t.album_artist.strip()}, key=str.casefold)
-            if len(albums) > 1 or len(aas) > 1:
-                bits = []
-                if len(albums) > 1:
-                    bits.append("album: " + " / ".join(albums))
-                if len(aas) > 1:
-                    bits.append("album artist: " + " / ".join(aas))
-                issues.append({"issue_type": "inconsistent_album", "severity": "bad",
-                               "artist": item.artist, "album": item.album, "relative_path": rel,
-                               "details": "Tags differ between sampled tracks - " + "; ".join(bits),
-                               "data": {"albums": albums, "album_artists": aas,
-                                        "samples": [p.name for p in samples]}})
-                continue
-
-            tag_album = albums[0] if albums else ""
-            if aas:
-                tag_artist = aas[0]
-            else:
-                track_artists = sorted({t.artist.strip() for t in tags if t.artist.strip()}, key=str.casefold)
-                tag_artist = track_artists[0] if len(track_artists) == 1 else ""
-
-            artist_score = engine.similarity(item.artist, tag_artist) if tag_artist else 0.0
-            album_score = engine.similarity(item.album, tag_album) if tag_album else 0.0
-            if (tag_artist and artist_score < 0.72) or (tag_album and album_score < 0.62):
-                diffs = []
-                if tag_artist and artist_score < 0.72:
-                    diffs.append(f"artist folder '{item.artist}' vs tag '{tag_artist}' ({artist_score:.2f})")
-                if tag_album and album_score < 0.62:
-                    diffs.append(f"album folder '{item.album}' vs tag '{tag_album}' ({album_score:.2f})")
-                issues.append({"issue_type": "tag_mismatch", "severity": "warn",
-                               "artist": item.artist, "album": item.album, "relative_path": rel,
-                               "details": "; ".join(diffs),
-                               "data": {"tag_artist": tag_artist, "tag_album": tag_album,
-                                        "artist_score": artist_score, "album_score": album_score}})
-
-        if self.cancel.is_set():
-            return {"cancelled": 1, "issues": len(issues)}
-        self.db.replace_health_issues(issues, scan_id)
-        self.db.set_meta("health_dirty", "0")
-        counts = self.db.health_counts()
-        counts["cancelled"] = 0
-        return counts
 
 # ----------------------------------------------------------------------
 # Thumbnail cache: local JPEGs, only generated for cards on screen
@@ -1532,423 +301,6 @@ class LogTee:
 
 
 # ----------------------------------------------------------------------
-# Theme
-# ----------------------------------------------------------------------
-C = {
-    # Flatter desktop/media-manager palette: less dashboard, more utility app.
-    "bg": "#0e1114",
-    "sidebar": "#11161b",
-    "panel": "#14191f",
-    "card": "#181e25",
-    "input": "#1a2027",
-    "hover": "#202832",
-    "border": "#27313b",
-    "border_hi": "#3a4856",
-    "text": "#edf1f5",
-    "muted": "#9aa6b2",
-    "faint": "#687582",
-    "accent": "#35b8a6",
-    "accent_hi": "#58c9b9",
-    "accent_lo": "#173a36",
-    "ok": "#4fc58b",
-    "warn": "#d9a441",
-    "bad": "#e06c75",
-}
-
-
-def make_fonts(root: tk.Misc) -> SimpleNamespace:
-    base = tkfont.nametofont("TkDefaultFont")
-    family = base.actual("family")
-    size = int(base.actual("size"))
-    sign = -1 if size < 0 else 1
-    s = abs(size) or 10
-
-    def f(delta: int, weight: str = "normal") -> tkfont.Font:
-        return tkfont.Font(root=root, family=family, size=sign * max(7, s + delta), weight=weight)
-
-    return SimpleNamespace(
-        body=f(0), body_b=f(0, "bold"), small=f(-1), small_b=f(-1, "bold"),
-        tiny=f(-2), tiny_b=f(-2, "bold"), title=f(2, "bold"), h1=f(5, "bold"),
-        mono=tkfont.nametofont("TkFixedFont"),
-    )
-
-
-def apply_style(root: tk.Misc, F: SimpleNamespace) -> None:
-    st = ttk.Style(root)
-    try:
-        st.theme_use("clam")
-    except tk.TclError:
-        pass
-    st.configure(".", background=C["bg"], foreground=C["text"], fieldbackground=C["input"],
-                 bordercolor=C["border"], lightcolor=C["bg"], darkcolor=C["bg"],
-                 troughcolor=C["input"], focuscolor=C["accent"], selectbackground=C["accent"],
-                 selectforeground="#ffffff", insertcolor=C["text"], font=F.body)
-
-    def button(name: str, bg: str, hover: str, fg: str, font: Any, padding: Any) -> None:
-        st.configure(name, background=bg, foreground=fg, bordercolor=bg, lightcolor=bg,
-                     darkcolor=bg, relief="flat", padding=padding, font=font, anchor="center",
-                     focuscolor=blend(bg, "#ffffff", 0.35), focusthickness=1)
-        st.map(name,
-               background=[("disabled", C["input"]), ("pressed", hover), ("active", hover)],
-               foreground=[("disabled", C["faint"])],
-               bordercolor=[("disabled", C["input"]), ("active", hover)],
-               lightcolor=[("disabled", C["input"]), ("active", hover)],
-               darkcolor=[("disabled", C["input"]), ("active", hover)])
-
-    button("TButton", C["input"], C["hover"], C["text"], F.body, (12, 6))
-    button("Accent.TButton", C["accent"], C["accent_hi"], "#07110f", F.body_b, (12, 6))
-    button("Ghost.TButton", C["panel"], C["input"], C["text"], F.body, (10, 6))
-    button("Small.TButton", C["input"], C["hover"], C["text"], F.small, (9, 4))
-    button("SmallAccent.TButton", C["accent"], C["accent_hi"], "#07110f", F.small_b, (9, 4))
-    button("Danger.TButton", C["input"], blend(C["bad"], C["input"], 0.55), C["bad"], F.body, (14, 7))
-
-    st.layout("Slim.Vertical.TScrollbar", [
-        ("Vertical.Scrollbar.trough", {"sticky": "ns", "children": [
-            ("Vertical.Scrollbar.thumb", {"expand": "1", "sticky": "nswe"})]})])
-    st.configure("Slim.Vertical.TScrollbar", troughcolor=C["bg"], background=C["border"],
-                 bordercolor=C["bg"], lightcolor=C["border"], darkcolor=C["border"],
-                 gripcount=0, arrowsize=9, relief="flat")
-    st.map("Slim.Vertical.TScrollbar",
-           background=[("pressed", C["border_hi"]), ("active", C["border_hi"])],
-           lightcolor=[("active", C["border_hi"])], darkcolor=[("active", C["border_hi"])])
-    st.configure("Panel.Slim.Vertical.TScrollbar", troughcolor=C["panel"], bordercolor=C["panel"])
-
-    st.configure("Accent.Horizontal.TProgressbar", troughcolor=C["input"], background=C["accent"],
-                 bordercolor=C["input"], lightcolor=C["accent"], darkcolor=C["accent"], thickness=6)
-    st.configure("Horizontal.TScale", background=C["muted"], troughcolor=C["input"],
-                 bordercolor=C["bg"], lightcolor=C["muted"], darkcolor=C["muted"], sliderlength=12,
-                 gripcount=0, sliderthickness=12, troughrelief="flat", sliderrelief="flat")
-    st.map("Horizontal.TScale", background=[("active", C["text"])])
-    st.configure("TCheckbutton", background=C["panel"], foreground=C["text"],
-                 indicatorbackground=C["input"], indicatorforeground=C["accent"], focuscolor=C["panel"])
-    st.map("TCheckbutton", background=[("active", C["panel"])],
-           indicatorbackground=[("selected", C["input"])])
-
-    st.configure("Health.Treeview", background=C["bg"], fieldbackground=C["bg"], foreground=C["text"],
-                 bordercolor=C["border"], rowheight=30, relief="flat", font=F.small)
-    st.configure("Health.Treeview.Heading", background=C["panel"], foreground=C["muted"],
-                 bordercolor=C["border"], relief="flat", font=F.small_b, padding=(8, 7))
-    st.map("Health.Treeview", background=[("selected", C["accent_lo"])],
-           foreground=[("selected", C["text"])])
-    st.map("Health.Treeview.Heading", background=[("active", C["hover"])])
-
-    root.option_add("*Menu.background", C["input"])
-    root.option_add("*Menu.foreground", C["text"])
-    root.option_add("*Menu.activeBackground", C["accent"])
-    root.option_add("*Menu.activeForeground", "#ffffff")
-    root.option_add("*Menu.relief", "flat")
-    root.option_add("*Menu.borderWidth", 0)
-
-
-def wheel_pixels(event: tk.Event) -> int:
-    if getattr(event, "num", None) == 4:
-        return -70
-    if getattr(event, "num", None) == 5:
-        return 70
-    delta = int(getattr(event, "delta", 0) or 0)
-    if abs(delta) >= 120:
-        return int(-delta / 120 * 70)
-    return -delta * (10 if IS_MAC else 20)
-
-
-# ----------------------------------------------------------------------
-# Small custom widgets (tk-based so colours work on macOS, Windows and Linux)
-# ----------------------------------------------------------------------
-def recolor(widget: tk.Misc, bg: str) -> None:
-    try:
-        widget.configure(bg=bg)
-    except tk.TclError:
-        pass
-    for child in widget.winfo_children():
-        if isinstance(child, (tk.Frame, tk.Label, tk.Canvas)) and not getattr(child, "_keep_bg", False):
-            recolor(child, bg)
-
-
-class Dot(tk.Canvas):
-    def __init__(self, parent: tk.Misc, color: str, bg: str, size: int = 8) -> None:
-        super().__init__(parent, width=size, height=size, bg=bg, highlightthickness=0, bd=0)
-        self.oval = self.create_oval(1, 1, size - 1, size - 1, fill=color, outline=color)
-
-    def set_color(self, color: str) -> None:
-        self.itemconfigure(self.oval, fill=color, outline=color)
-
-
-class NavItem(tk.Frame):
-    def __init__(self, parent: tk.Misc, F: SimpleNamespace, text: str, command: Callable[[], None],
-                 dot: Optional[str] = None, count: bool = True) -> None:
-        super().__init__(parent, bg=C["sidebar"], cursor="hand2")
-        self.F = F
-        self.active = False
-        self.hover = False
-        self.command = command
-        self.bar = tk.Frame(self, width=3, bg=C["sidebar"])
-        self.bar._keep_bg = True  # type: ignore[attr-defined]
-        self.bar.pack(side="left", fill="y")
-        self.dot = Dot(self, dot, C["sidebar"]) if dot else None
-        if self.dot:
-            self.dot.pack(side="left", padx=(12, 0))
-        self.label = tk.Label(self, text=text, bg=C["sidebar"], fg=C["muted"], font=F.body,
-                              anchor="w", padx=10 if dot else 15, pady=7)
-        self.label.pack(side="left", fill="x", expand=True)
-        self.count = tk.Label(self, text="", bg=C["sidebar"], fg=C["faint"], font=F.small, padx=14)
-        if count:
-            self.count.pack(side="right")
-        for w in (self, self.label, self.count, *( [self.dot] if self.dot else [])):
-            w.bind("<Button-1>", lambda _e: self.command())
-            w.bind("<Enter>", lambda _e: self._set_hover(True))
-            w.bind("<Leave>", lambda _e: self._set_hover(False))
-
-    def _set_hover(self, hover: bool) -> None:
-        self.hover = hover
-        self._paint()
-
-    def set_active(self, active: bool) -> None:
-        self.active = active
-        self._paint()
-
-    def set_count(self, value: Any) -> None:
-        self.count.configure(text=str(value))
-
-    def _paint(self) -> None:
-        bg = C["input"] if self.active else (C["card"] if self.hover else C["sidebar"])
-        recolor(self, bg)
-        self.bar.configure(bg=C["accent"] if self.active else bg)
-        self.label.configure(fg=C["text"] if self.active else C["muted"],
-                             font=self.F.body_b if self.active else self.F.body)
-
-
-class Segmented(tk.Frame):
-    """A compact segmented control."""
-
-    def __init__(self, parent: tk.Misc, F: SimpleNamespace, options: list[tuple[Any, str]], value: Any,
-                 command: Optional[Callable[[Any], None]] = None, font: Any = None) -> None:
-        super().__init__(parent, bg=C["border"], padx=1, pady=1)
-        self.F = F
-        self.command = command
-        self.font = font or F.small
-        self.value = value
-        self.labels: dict[Any, tk.Label] = {}
-        self.set_options(options, value)
-
-    def set_options(self, options: list[tuple[Any, str]], value: Any) -> None:
-        for lbl in self.labels.values():
-            lbl.destroy()
-        self.labels = {}
-        for i, (val, text) in enumerate(options):
-            lbl = tk.Label(self, text=text, font=self.font, padx=12, pady=4, cursor="hand2", bd=0)
-            lbl.grid(row=0, column=i, padx=(0 if i == 0 else 1, 0), sticky="nsew")
-            lbl.bind("<Button-1>", lambda _e, v=val: self.set(v, notify=True))
-            lbl.bind("<Enter>", lambda _e, v=val: self._hover(v, True))
-            lbl.bind("<Leave>", lambda _e, v=val: self._hover(v, False))
-            self.labels[val] = lbl
-        self.set(value)
-
-    def _hover(self, value: Any, on: bool) -> None:
-        if value != self.value and value in self.labels:
-            self.labels[value].configure(bg=C["hover"] if on else C["input"])
-
-    def set(self, value: Any, notify: bool = False) -> None:
-        changed = value != self.value
-        self.value = value
-        for val, lbl in self.labels.items():
-            selected = val == value
-            lbl.configure(bg=C["accent_lo"] if selected else C["input"],
-                          fg=C["text"] if selected else C["muted"])
-        if notify and changed and self.command:
-            self.command(value)
-
-
-class FieldEntry(tk.Frame):
-    """Flat entry with a focus ring and an optional placeholder / clear button."""
-
-    def __init__(self, parent: tk.Misc, F: SimpleNamespace, variable: tk.StringVar,
-                 placeholder: str = "", show: str = "", icon: bool = False, clearable: bool = False,
-                 width: int = 20) -> None:
-        super().__init__(parent, bg=C["input"], highlightthickness=1,
-                         highlightbackground=C["border"], highlightcolor=C["border"])
-        self.var = variable
-        if icon:
-            glass = tk.Canvas(self, width=16, height=16, bg=C["input"], highlightthickness=0)
-            glass.create_oval(2, 2, 11, 11, outline=C["faint"], width=2)
-            glass.create_line(10, 10, 14, 14, fill=C["faint"], width=2)
-            glass.pack(side="left", padx=(9, 0))
-        self.entry = tk.Entry(self, textvariable=variable, bg=C["input"], fg=C["text"],
-                              insertbackground=C["text"], relief="flat", bd=0, font=F.body,
-                              highlightthickness=0, show=show, width=width,
-                              disabledbackground=C["input"], disabledforeground=C["faint"],
-                              selectbackground=C["accent"], selectforeground="#ffffff")
-        self.entry.pack(side="left", fill="both", expand=True, padx=(8, 8), pady=6)
-        self.placeholder = tk.Label(self, text=placeholder, bg=C["input"], fg=C["faint"], font=F.body,
-                                    anchor="w", cursor="xterm")
-        self.placeholder.bind("<Button-1>", lambda _e: self.entry.focus_set())
-        self.clear = tk.Label(self, text="✕", bg=C["input"], fg=C["faint"], font=F.small,
-                              cursor="hand2", padx=8)
-        self.clear.bind("<Button-1>", lambda _e: (self.var.set(""), self.entry.focus_set()))
-        self.clearable = clearable
-        self.entry.bind("<FocusIn>", lambda _e: self.configure(highlightbackground=C["accent"],
-                                                               highlightcolor=C["accent"]))
-        self.entry.bind("<FocusOut>", lambda _e: self.configure(highlightbackground=C["border"],
-                                                                highlightcolor=C["border"]))
-        variable.trace_add("write", lambda *_a: self._sync())
-        self.entry.bind("<Configure>", lambda _e: self._sync(), add="+")
-        self.after_idle(self._sync)
-
-    def _sync(self) -> None:
-        empty = not self.var.get()
-        if empty and self.placeholder.cget("text"):
-            x = self.entry.winfo_x() or 30
-            self.placeholder.place(x=x, rely=0.5, anchor="w")
-        else:
-            self.placeholder.place_forget()
-        if self.clearable:
-            if empty:
-                self.clear.pack_forget()
-            else:
-                self.clear.pack(side="right")
-
-    def set_show(self, show: str) -> None:
-        self.entry.configure(show=show)
-
-
-class DropZone(tk.Canvas):
-    def __init__(self, parent: tk.Misc, F: SimpleNamespace, on_click: Callable[[], None],
-                 height: int = 86) -> None:
-        super().__init__(parent, height=height, bg=C["panel"], highlightthickness=0, bd=0, cursor="hand2")
-        self.F = F
-        self.title = "Drop an image here"
-        self.sub = f"or click to browse  ·  {MOD_LABEL}V to paste"
-        self.active = False
-        self.bind("<Configure>", lambda _e: self.redraw())
-        self.bind("<Enter>", lambda _e: self.set_active(True))
-        self.bind("<Leave>", lambda _e: self.set_active(False))
-        self.bind("<Button-1>", lambda _e: on_click())
-
-    def set_text(self, title: str, sub: str) -> None:
-        self.title, self.sub = title, sub
-        self.redraw()
-
-    def set_active(self, active: bool) -> None:
-        self.active = active
-        self.redraw()
-
-    def redraw(self) -> None:
-        self.delete("all")
-        w, h = self.winfo_width(), self.winfo_height()
-        if w < 10:
-            return
-        color = C["accent"] if self.active else C["border_hi"]
-        fill = blend(C["panel"], C["accent"], 0.08) if self.active else C["panel"]
-        self.create_rectangle(1, 1, w - 2, h - 2, outline=color, dash=(5, 4), width=1, fill=fill)
-        self.create_text(w / 2, h / 2 - 9, text=self.title, fill=C["text"], font=self.F.body_b)
-        self.create_text(w / 2, h / 2 + 11, text=self.sub, fill=C["muted"], font=self.F.small)
-
-
-class Tooltip:
-    def __init__(self, root: tk.Misc, F: SimpleNamespace) -> None:
-        self.root = root
-        self.F = F
-        self.win: Optional[tk.Toplevel] = None
-        self.job: Optional[str] = None
-
-    def schedule(self, text: str, x: int, y: int, delay: int = 550) -> None:
-        self.cancel()
-        self.job = self.root.after(delay, lambda: self.show(text, x, y))
-
-    def show(self, text: str, x: int, y: int) -> None:
-        self.hide()
-        win = tk.Toplevel(self.root)
-        win.wm_overrideredirect(True)
-        try:
-            win.attributes("-topmost", True)
-        except tk.TclError:
-            pass
-        tk.Label(win, text=text, bg=C["input"], fg=C["text"], font=self.F.small, justify="left",
-                 padx=9, pady=6, wraplength=320, highlightthickness=1,
-                 highlightbackground=C["border_hi"]).pack()
-        win.wm_geometry(f"+{x + 14}+{y + 18}")
-        self.win = win
-
-    def cancel(self) -> None:
-        if self.job:
-            self.root.after_cancel(self.job)
-            self.job = None
-
-    def hide(self) -> None:
-        self.cancel()
-        if self.win is not None:
-            self.win.destroy()
-            self.win = None
-
-
-class Toast:
-    """Small transient message at the bottom of a container instead of a modal popup."""
-
-    COLORS = {"info": "accent", "ok": "ok", "warn": "warn", "error": "bad"}
-
-    def __init__(self, parent: tk.Misc, F: SimpleNamespace) -> None:
-        self.parent = parent
-        self.frame = tk.Frame(parent, bg=C["input"], highlightthickness=1, highlightbackground=C["border_hi"])
-        self.dot = Dot(self.frame, C["accent"], C["input"], 8)
-        self.dot.pack(side="left", padx=(12, 0))
-        self.label = tk.Label(self.frame, text="", bg=C["input"], fg=C["text"], font=F.body,
-                              padx=10, pady=8, wraplength=460, justify="left")
-        self.label.pack(side="left")
-        self.job: Optional[str] = None
-
-    def show(self, text: str, kind: str = "info", ms: int = 3200) -> None:
-        self.dot.set_color(C[self.COLORS.get(kind, "accent")])
-        self.label.configure(text=text)
-        self.frame.place(relx=0.5, rely=1.0, y=-18, anchor="s")
-        self.frame.lift()
-        if self.job:
-            self.parent.after_cancel(self.job)
-        self.job = self.parent.after(ms, self.hide)
-
-    def hide(self) -> None:
-        self.frame.place_forget()
-        self.job = None
-
-
-class ScrollFrame(tk.Frame):
-    """Vertically scrolling container; wheel events are routed by the app."""
-
-    def __init__(self, parent: tk.Misc, bg: str, register: Callable[[tk.Misc, Callable[[int], None]], None],
-                 scrollbar_style: str = "Slim.Vertical.TScrollbar") -> None:
-        super().__init__(parent, bg=bg)
-        self.canvas = tk.Canvas(self, bg=bg, highlightthickness=0, bd=0, yscrollincrement=1)
-        self.vsb = ttk.Scrollbar(self, orient="vertical", style=scrollbar_style, command=self.canvas.yview)
-        self.inner = tk.Frame(self.canvas, bg=bg)
-        self.window = self.canvas.create_window(0, 0, window=self.inner, anchor="nw")
-        self.canvas.configure(yscrollcommand=self._on_scroll)
-        self.canvas.grid(row=0, column=0, sticky="nsew")
-        self.vsb.grid(row=0, column=1, sticky="ns")
-        self.columnconfigure(0, weight=1)
-        self.rowconfigure(0, weight=1)
-        self.inner.bind("<Configure>", self._on_inner)
-        self.canvas.bind("<Configure>", self._on_canvas)
-        register(self.canvas, self.scroll_pixels)
-
-    def _on_inner(self, _event: tk.Event) -> None:
-        self.canvas.configure(scrollregion=(0, 0, self.inner.winfo_reqwidth(), self.inner.winfo_reqheight()))
-
-    def _on_canvas(self, event: tk.Event) -> None:
-        self.canvas.itemconfigure(self.window, width=event.width)
-
-    def _on_scroll(self, first: str, last: str) -> None:
-        self.vsb.set(first, last)
-        needed = not (float(first) <= 0.0 and float(last) >= 1.0)
-        if needed != bool(self.vsb.winfo_ismapped()):
-            if needed:
-                self.vsb.grid()
-            else:
-                self.vsb.grid_remove()
-
-    def scroll_pixels(self, px: int) -> None:
-        if self.inner.winfo_reqheight() > self.canvas.winfo_height():
-            self.canvas.yview_scroll(px, "units")
-
-
-# ----------------------------------------------------------------------
 # Application
 # ----------------------------------------------------------------------
 STATUS_NAV = [
@@ -2007,6 +359,7 @@ class ArtworkApp:
         self._counts: dict[str, int] = {}
         self._empty_widgets: list[tk.Misc] = []
         self.health_filter = "all"
+        self.health_thorough_var = tk.BooleanVar(value=bool(self.config.get("health_thorough", False)))
         self.selected_health_issue_id: Optional[int] = None
 
         zoom = int(self.config.get("zoom") or ZOOM_DEFAULT)
@@ -2023,8 +376,11 @@ class ArtworkApp:
         output_name = str(self.config.get("output_name") or self.db.get_meta("output_name", "folder.jpg"))
         self.output_name = output_name if output_name in ("folder.jpg", "cover.jpg") else "folder.jpg"
         self.output_size_var = tk.StringVar(value=str(self.config.get("output_size") or DEFAULT_OUTPUT_SIZE))
+        self.media_backup_var = tk.BooleanVar(value=self.config.get("media_backup", True))
+        self.media_backup_path_var = tk.StringVar(value=str(self.config.get("media_backup_path") or local_app_dir() / "media-backups"))
+        self.ffmpeg_path_var = tk.StringVar(value=str(self.config.get("ffmpeg_path") or ""))
         self.api_lastfm_key_var = tk.StringVar()
-        self.api_lastfm_secret_var = tk.StringVar()
+        self.api_discogs_token_var = tk.StringVar()
         self.api_fanart_key_var = tk.StringVar()
         self.status_var = tk.StringVar(value="Ready")
 
@@ -2353,14 +709,11 @@ class ArtworkApp:
         toolbar = tk.Frame(parent, bg=C["panel"], padx=12, pady=9,
                            highlightthickness=1, highlightbackground=C["border"])
         toolbar.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 12))
-        self.health_seg = Segmented(
-            toolbar, self.F,
-            [("all", "All"), ("duplicate_artist", "Duplicate artists"),
-             ("tag_mismatch", "Tag mismatches"), ("inconsistent_album", "Inconsistent albums"),
-             ("missing_tags", "Missing tags")],
-            self.health_filter, command=self.set_health_filter,
-        )
+        self.health_seg = Segmented(toolbar, self.F, HEALTH_FILTERS, self.health_filter,
+                                    command=self.set_health_filter)
         self.health_seg.pack(side="left")
+        ttk.Checkbutton(toolbar, text="Check every track (slower)", variable=self.health_thorough_var,
+                        command=self._persist_basic_config).pack(side="right")
 
         body = tk.Frame(parent, bg=C["bg"])
         body.grid(row=2, column=0, sticky="nsew", padx=20, pady=(0, 14))
@@ -2442,6 +795,38 @@ class ArtworkApp:
             tk.Label(parent, text=hint, bg=C["panel"], fg=C["faint"], font=self.F.tiny, anchor="w",
                      justify="left", wraplength=420).pack(fill="x", pady=(1, 5))
 
+    def open_media_tools(self) -> None:
+        if self.operation_lock.locked():
+            return
+        root = self._valid_music_root(silent=True)
+        if root is None:
+            chosen = filedialog.askdirectory(title="Choose a folder to prepare for PodBox")
+            if not chosen:
+                return
+            root = Path(chosen)
+        raw = self.output_size_var.get().strip()
+        if not raw.isdigit() or not 64 <= int(raw) <= 2000:
+            messagebox.showerror(APP_NAME, "Artwork size must be a whole number between 64 and 2000.")
+            return
+        if self.media_backup_var.get() and not Path(self.media_backup_path_var.get()).expanduser().is_absolute():
+            messagebox.showerror(APP_NAME, "Choose an absolute local backup folder path first.")
+            return
+        from .media_dialog import MediaDialog
+        self._persist_basic_config()
+        MediaDialog(self, root, local_app_dir(), C, open_in_file_manager)
+
+    def choose_ffmpeg(self) -> None:
+        chosen = filedialog.askopenfilename(title="Select FFmpeg executable",
+                    filetypes=[("FFmpeg", "ffmpeg.exe" if os.name == "nt" else "ffmpeg"), ("All files", "*")])
+        if chosen:
+            self.ffmpeg_path_var.set(chosen)
+
+    def choose_media_backup_folder(self) -> None:
+        chosen = filedialog.askdirectory(title="Select a backup folder on this computer",
+                                         initialdir=self.media_backup_path_var.get())
+        if chosen:
+            self.media_backup_path_var.set(chosen)
+
     def _build_settings_view(self, parent: tk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(0, weight=1)
@@ -2485,6 +870,27 @@ class ArtworkApp:
             side="left", padx=(7, 0))
         self.output_size_var.trace_add("write", lambda *_a: self._mark_settings_dirty())
 
+        media_card = self._settings_card(left, "Prepare media for PodBox",
+            "Scan hi-res FLAC and artwork sizes. Preview and select files before converting or resizing; find better sources for small artwork.")
+        ttk.Checkbutton(media_card, text="Back up originals before converting or resizing",
+                        variable=self.media_backup_var).pack(anchor="w")
+        self._field_label(media_card, "Local backup folder", "Applies to media conversion and resizing. Rockbox database backups remain mandatory.")
+        backup_row = tk.Frame(media_card, bg=C["panel"])
+        backup_row.pack(fill="x")
+        FieldEntry(backup_row, self.F, self.media_backup_path_var, width=28).pack(side="left", fill="x", expand=True)
+        ttk.Button(backup_row, text="Browse…", style="Small.TButton", command=self.choose_media_backup_folder).pack(side="left", padx=(7, 0))
+        self._field_label(media_card, "FFmpeg executable", "Optional for scans and artwork; required for FLAC conversion. Leave blank to use PATH.")
+        ffmpeg_row = tk.Frame(media_card, bg=C["panel"])
+        ffmpeg_row.pack(fill="x")
+        FieldEntry(ffmpeg_row, self.F, self.ffmpeg_path_var, width=28, placeholder="ffmpeg.exe / ffmpeg").pack(side="left", fill="x", expand=True)
+        ttk.Button(ffmpeg_row, text="Browse…", style="Small.TButton", command=self.choose_ffmpeg).pack(side="left", padx=(7, 0))
+        for var in (self.media_backup_var, self.media_backup_path_var, self.ffmpeg_path_var):
+            var.trace_add("write", lambda *_a: self._mark_settings_dirty())
+        media_buttons = tk.Frame(media_card, bg=C["panel"])
+        media_buttons.pack(fill="x", pady=(12, 0))
+        ttk.Button(media_buttons, text="Scan and prepare…", command=self.open_media_tools).pack(side="left")
+        ttk.Button(media_buttons, text="Open backups", command=lambda: open_in_file_manager(Path(self.media_backup_path_var.get()).expanduser())).pack(side="left", padx=(7, 0))
+
         store = self._settings_card(left, "Local data", "Index and thumbnails are stored on this computer.")
         self._field_label(store, "Database")
         tk.Label(store, text=str(database_path()), bg=C["panel"], fg=C["muted"], font=self.F.tiny, anchor="w",
@@ -2506,29 +912,31 @@ class ArtworkApp:
         ttk.Button(device_db, text="Rockbox database…", command=self.open_rockbox_database).pack(anchor="w")
 
         src = self._settings_card(right, "Online sources",
-                                  "MusicBrainz, Cover Art Archive and TheAudioDB work without a key. "+
-                                  "Last.fm and fanart.tv add more artist artwork.")
-        self._field_label(src, "Last.fm API key")
+                                  "MusicBrainz, Cover Art Archive, Deezer, Apple Music and TheAudioDB work "
+                                  "without a key. Last.fm, fanart.tv and Discogs add more artwork, and Discogs "
+                                  "adds original years and styles to the tag editor's suggestions.")
+        self._field_label(src, "Last.fm API key", "Only the API key is needed, not the shared secret.")
         FieldEntry(src, self.F, self.api_lastfm_key_var, width=42).pack(fill="x")
-        self._field_label(src, "Last.fm shared secret")
+        self._field_label(src, "fanart.tv API key")
+        FieldEntry(src, self.F, self.api_fanart_key_var, width=42).pack(fill="x")
+        self._field_label(src, "Discogs personal token", "Discogs → Settings → Developers → Generate new token.")
         secret_row = tk.Frame(src, bg=C["panel"])
         secret_row.pack(fill="x")
-        self.secret_entry = FieldEntry(secret_row, self.F, self.api_lastfm_secret_var, show="•", width=34)
+        self.secret_entry = FieldEntry(secret_row, self.F, self.api_discogs_token_var, show="•", width=34)
         self.secret_entry.pack(side="left", fill="x", expand=True)
         self.secret_toggle = tk.Label(secret_row, text="Show", bg=C["panel"], fg=C["accent"],
                                       font=self.F.small, cursor="hand2", padx=9)
         self.secret_toggle.pack(side="left")
         self.secret_toggle.bind("<Button-1>", lambda _e: self._toggle_secret())
-        self._field_label(src, "fanart.tv API key")
-        FieldEntry(src, self.F, self.api_fanart_key_var, width=42).pack(fill="x")
-        for var in (self.api_lastfm_key_var, self.api_lastfm_secret_var, self.api_fanart_key_var):
+        for var in (self.api_lastfm_key_var, self.api_fanart_key_var, self.api_discogs_token_var):
             var.trace_add("write", lambda *_a: self._mark_settings_dirty())
 
         status = tk.Frame(src, bg=C["panel"])
         status.pack(fill="x", pady=(14, 0))
         self.source_rows: dict[str, tuple[Dot, tk.Label]] = {}
-        for key, label in (("lastfm", "Last.fm"), ("fanart", "fanart.tv"),
-                           ("mb", "MusicBrainz + Cover Art Archive"), ("adb", "TheAudioDB")):
+        for key, label in (("lastfm", "Last.fm"), ("fanart", "fanart.tv"), ("discogs", "Discogs"),
+                           ("mb", "MusicBrainz + Cover Art Archive"), ("deezer", "Deezer + Apple Music"),
+                           ("adb", "TheAudioDB")):
             r = tk.Frame(status, bg=C["panel"])
             r.pack(fill="x", pady=2)
             dot = Dot(r, C["faint"], C["panel"], 7)
@@ -2541,7 +949,8 @@ class ArtworkApp:
         links = tk.Frame(src, bg=C["panel"])
         links.pack(fill="x", pady=(10, 0))
         for text, url in (("Last.fm key ↗", "https://www.last.fm/api/account/create"),
-                          ("fanart.tv key ↗", "https://fanart.tv/get-an-api-key/")):
+                          ("fanart.tv key ↗", "https://fanart.tv/get-an-api-key/"),
+                          ("Discogs token ↗", "https://www.discogs.com/settings/developers")):
             link = tk.Label(links, text=text, bg=C["panel"], fg=C["accent"],
                             font=self.F.small, cursor="hand2")
             link.pack(side="left", padx=(0, 16))
@@ -2691,13 +1100,8 @@ class ArtworkApp:
             return
         for iid in self.health_tree.get_children():
             self.health_tree.delete(iid)
-        labels = {
-            "duplicate_artist": "Duplicate artist",
-            "tag_mismatch": "Tag mismatch",
-            "inconsistent_album": "Inconsistent album",
-            "missing_tags": "Missing tags",
-        }
-        for row in self.db.health_issues(self.health_filter):
+        labels = HEALTH_LABELS
+        for row in self.db.health_issues(HEALTH_CATEGORIES.get(self.health_filter, self.health_filter)):
             item = str(row["artist"])
             if row["album"]:
                 item += " - " + str(row["album"])
@@ -2756,15 +1160,16 @@ class ArtworkApp:
             self.toast.show("Another task is still running. Wait for it or cancel it first.", "warn")
             return
         self.cancel_event.clear()
-        self._set_busy("health", "Analyzing library health…")
-        self.log_app(f"Health analysis started: {root}")
+        thorough = self.health_thorough_var.get()
+        self._set_busy("health", "Analyzing library health" + (", every track" if thorough else "") + "…")
+        self.log_app(f"Health analysis started: {root}" + (" (every track)" if thorough else ""))
 
         def worker() -> None:
             try:
                 scanner = HealthScanner(
                     self.db, root,
                     lambda i, total, name: self.ui_queue.put(("progress", (i, total, f"Checking {name}"))),
-                    self.cancel_event,
+                    self.cancel_event, thorough=thorough,
                 )
                 self.ui_queue.put(("health_done", scanner.scan()))
             except Exception as exc:
@@ -3651,8 +2056,12 @@ class ArtworkApp:
         self.config["music_root"] = self.music_root_var.get().strip()
         self.config["output_name"] = self.output_name
         self.config["output_size"] = self.output_size()
+        self.config["media_backup"] = self.media_backup_var.get()
+        self.config["media_backup_path"] = self.media_backup_path_var.get().strip()
+        self.config["ffmpeg_path"] = self.ffmpeg_path_var.get().strip()
         self.config["page_size"] = int(self.config.get("page_size") or DEFAULT_PAGE_SIZE)
         self.config["zoom"] = self.zoom
+        self.config["health_thorough"] = bool(self.health_thorough_var.get())
         self.config["kind_filter"] = self.kind_filter
         self.config["status_filter"] = self.status_filter
         try:
@@ -3673,7 +2082,7 @@ class ArtworkApp:
         self._settings_loading = True
         creds = engine.load_credentials()
         self.api_lastfm_key_var.set(creds.lastfm_api_key)
-        self.api_lastfm_secret_var.set(creds.lastfm_api_secret)
+        self.api_discogs_token_var.set(creds.discogs_token)
         self.api_fanart_key_var.set(creds.fanart_api_key)
         self._known_root = self.music_root_var.get().strip()
         self.root.after_idle(lambda: setattr(self, "_settings_loading", False))
@@ -3683,7 +2092,9 @@ class ArtworkApp:
         states = {
             "lastfm": (creds.has_lastfm, "enabled" if creds.has_lastfm else "no key, skipped"),
             "fanart": (creds.has_fanart, "enabled" if creds.has_fanart else "no key, skipped"),
+            "discogs": (creds.has_discogs, "enabled" if creds.has_discogs else "no token, skipped"),
             "mb": (True, "always on, no key needed"),
+            "deezer": (True, "always on, no key needed"),
             "adb": (True, "always on, public key"),
         }
         for key, (on, text) in states.items():
@@ -3699,8 +2110,8 @@ class ArtworkApp:
             return
         creds = engine.Credentials(
             lastfm_api_key=self.api_lastfm_key_var.get().strip(),
-            lastfm_api_secret=self.api_lastfm_secret_var.get().strip(),
             fanart_api_key=self.api_fanart_key_var.get().strip(),
+            discogs_token=self.api_discogs_token_var.get().strip(),
         )
         engine.save_credentials(creds)
         self.output_name = self.output_seg.value
@@ -4590,8 +3001,8 @@ class ArtworkApp:
         self.toast.show(text, "ok" if not failed else "warn", ms=5000)
 
     def on_close(self) -> None:
-        if self._busy_kind == "rockbox_database":
-            messagebox.showinfo(APP_NAME, "Wait for the Rockbox database operation to finish before quitting.")
+        if self._busy_kind in ("rockbox_database", "media"):
+            messagebox.showinfo(APP_NAME, "Wait for the database or media operation to finish before quitting. Media operations can be cancelled in their dialog.")
             return
         if self.operation_lock.locked():
             if not messagebox.askyesno(APP_NAME, "A scan or fetch is still running. Quit anyway?"):
@@ -4620,614 +3031,6 @@ class ArtworkApp:
         if picker is not None and picker.alive():
             picker.close()
         self._picker = PickerDialog(self, item)
-
-
-class TagEditorDialog:
-    """Album-level tag editor with explicit destructive actions.
-
-    Reading tags happens off the UI thread. A blank value is never interpreted
-    as deletion: removing a tag requires checking the dedicated Clear box.
-    """
-
-    FIELDS = [
-        ("albumartist", "Album artist"),
-        ("artist", "Artist"),
-        ("album", "Album"),
-        ("date", "Year / date"),
-        ("genre", "Genre"),
-    ]
-
-    def __init__(self, app: ArtworkApp, folder: Path, artist: str, album: str) -> None:
-        self.app = app
-        self.folder = folder
-        self.files: list[Path] = []
-
-        self.win = tk.Toplevel(app.root)
-        self.win.title("Edit album tags")
-        self.win.configure(bg=C["panel"])
-        self.win.transient(app.root)
-        self.win.grab_set()
-        self.win.geometry("700x590")
-        self.win.minsize(620, 500)
-        F = app.F
-
-        outer = tk.Frame(self.win, bg=C["panel"], padx=20, pady=18)
-        outer.pack(fill="both", expand=True)
-        tk.Label(outer, text="Edit album tags", bg=C["panel"], fg=C["text"],
-                 font=F.h1, anchor="w").pack(fill="x")
-        tk.Label(outer, text=f"{artist} - {album}", bg=C["panel"], fg=C["muted"],
-                 font=F.body, anchor="w").pack(fill="x", pady=(1, 2))
-        self.file_count_label = tk.Label(outer, text="Reading audio files - only checked fields will be changed",
-                                         bg=C["panel"], fg=C["faint"], font=F.small, anchor="w")
-        self.file_count_label.pack(fill="x", pady=(0, 14))
-
-        self.vars: dict[str, tk.StringVar] = {}
-        self.change_vars: dict[str, tk.BooleanVar] = {}
-        self.clear_vars: dict[str, tk.BooleanVar] = {}
-        self.entries: dict[str, ttk.Entry] = {}
-        self.change_checks: dict[str, ttk.Checkbutton] = {}
-        self.clear_checks: dict[str, ttk.Checkbutton] = {}
-        self.hints: dict[str, tk.Label] = {}
-
-        fields = tk.Frame(outer, bg=C["panel"])
-        fields.pack(fill="x")
-        fields.columnconfigure(1, weight=1)
-
-        for row, (key, label) in enumerate(self.FIELDS):
-            change = tk.BooleanVar(value=False)
-            clear = tk.BooleanVar(value=False)
-            value = tk.StringVar(value="")
-            self.change_vars[key] = change
-            self.clear_vars[key] = clear
-            self.vars[key] = value
-
-            cb = ttk.Checkbutton(fields, variable=change, command=lambda k=key: self._toggle_field(k))
-            cb.grid(row=row, column=0, sticky="nw", pady=7)
-            cb.state(["disabled"])
-            self.change_checks[key] = cb
-
-            label_frame = tk.Frame(fields, bg=C["panel"])
-            label_frame.grid(row=row, column=1, sticky="ew", pady=7)
-            label_frame.columnconfigure(1, weight=1)
-            tk.Label(label_frame, text=label, bg=C["panel"], fg=C["text"], font=F.small_b,
-                     width=14, anchor="w").grid(row=0, column=0, sticky="w", padx=(0, 8))
-            entry = ttk.Entry(label_frame, textvariable=value, state="disabled")
-            entry.grid(row=0, column=1, sticky="ew")
-            self.entries[key] = entry
-
-            clear_cb = ttk.Checkbutton(label_frame, text="Clear tag", variable=clear,
-                                       command=lambda k=key: self._toggle_clear(k))
-            clear_cb.grid(row=0, column=2, sticky="e", padx=(10, 0))
-            clear_cb.state(["disabled"])
-            self.clear_checks[key] = clear_cb
-
-            hint = tk.Label(label_frame, text="reading tags...", bg=C["panel"], fg=C["faint"],
-                            font=F.tiny, anchor="w")
-            hint.grid(row=1, column=1, columnspan=2, sticky="w", pady=(2, 0))
-            self.hints[key] = hint
-
-        note_bg = blend(C["panel"], C["warn"], 0.09)
-        note = tk.Frame(outer, bg=note_bg, padx=11, pady=9,
-                        highlightthickness=1, highlightbackground=blend(C["panel"], C["warn"], 0.25))
-        note.pack(fill="x", pady=(14, 0))
-        tk.Label(note, text="Safe bulk editing", bg=note_bg, fg=C["text"], font=F.small_b,
-                 anchor="w").pack(fill="x")
-        tk.Label(note, text="A blank field is never saved and never deletes a tag. To remove metadata, "
-                 "enable that field and explicitly choose Clear tag. Artist can be mixed on compilations, "
-                 "so change it only when every track should share the same artist.",
-                 bg=note_bg, fg=C["muted"], font=F.small, anchor="w", justify="left",
-                 wraplength=620).pack(fill="x", pady=(2, 0))
-
-        self.status = tk.Label(outer, text="Reading tags from the album...",
-                               bg=C["panel"], fg=C["muted"], font=F.small, anchor="w")
-        self.status.pack(fill="x", pady=(12, 0))
-
-        buttons = tk.Frame(outer, bg=C["panel"])
-        buttons.pack(side="bottom", fill="x", pady=(16, 0))
-        ttk.Button(buttons, text="Cancel", style="Ghost.TButton", command=self.win.destroy).pack(side="right")
-        self.save_btn = ttk.Button(buttons, text="Save tags", style="Accent.TButton", command=self.save)
-        self.save_btn.pack(side="right", padx=(0, 7))
-        self.save_btn.state(["disabled"])
-
-        threading.Thread(target=self._load_worker, name="tag-editor-read", daemon=True).start()
-
-    def _alive(self) -> bool:
-        try:
-            return bool(self.win.winfo_exists())
-        except tk.TclError:
-            return False
-
-    def _load_worker(self) -> None:
-        values: dict[str, list[str]] = {key: [] for key, _ in self.FIELDS}
-        errors: list[str] = []
-        readable = 0
-        try:
-            files = list(engine.iter_audio_files(self.folder))
-        except Exception as exc:
-            files = []
-            errors.append(f"Could not scan album folder: {exc}")
-        for path in files:
-            try:
-                audio = engine.MutagenFile(str(path), easy=True)
-                if audio is None:
-                    raise RuntimeError("unsupported metadata")
-                readable += 1
-                for key, _label in self.FIELDS:
-                    raw = audio.get(key)
-                    if raw:
-                        value = str(raw[0] if isinstance(raw, list) else raw).strip()
-                    else:
-                        value = ""
-                    # Keep empty values in the list so 'set on some tracks, missing
-                    # on others' is represented as mixed instead of silently common.
-                    values[key].append(value)
-            except Exception as exc:
-                errors.append(f"{path.name}: {exc}")
-        self.app.ui_queue.put(("ui_callback", (self._finish_loading, (files, values, errors, readable))))
-
-    def _finish_loading(self, files: list[Path], values: dict[str, list[str]], errors: list[str], readable: int) -> None:
-        if not self._alive():
-            return
-        self.files = files
-        if not files:
-            messagebox.showwarning(APP_NAME, "No supported audio files were found in this album folder.", parent=self.win)
-            self.win.destroy()
-            return
-        self.file_count_label.configure(
-            text=f"{len(files)} audio file" + ("" if len(files) == 1 else "s") + " - only checked fields will be changed"
-        )
-        for key, _label in self.FIELDS:
-            uniques = sorted(set(values[key]), key=str.casefold)
-            common = uniques[0] if len(uniques) == 1 else ""
-            mixed = len(uniques) > 1
-            self.vars[key].set(common)
-            hint = "mixed across tracks" if mixed else ("not set" if not common else "current value")
-            self.hints[key].configure(text=hint)
-            self.change_checks[key].state(["!disabled"])
-        self.save_btn.state(["!disabled"])
-        if errors:
-            self.status.configure(text=f"Read {readable} file(s); {len(errors)} failed. See Activity log.", fg=C["warn"])
-            for line in errors:
-                self.app.log_app("Tag read failed: " + line)
-        else:
-            self.status.configure(text="Tags loaded. Choose only the fields you want to change.", fg=C["muted"])
-
-    def _toggle_field(self, key: str) -> None:
-        enabled = self.change_vars[key].get()
-        if not enabled:
-            self.clear_vars[key].set(False)
-            self.entries[key].configure(state="disabled")
-            self.clear_checks[key].state(["disabled"])
-            return
-        self.clear_checks[key].state(["!disabled"])
-        if self.clear_vars[key].get():
-            self.entries[key].configure(state="disabled")
-        else:
-            self.entries[key].configure(state="normal")
-            self.entries[key].focus_set()
-
-    def _toggle_clear(self, key: str) -> None:
-        if self.clear_vars[key].get():
-            self.change_vars[key].set(True)
-            self.entries[key].configure(state="disabled")
-            self.hints[key].configure(text="tag will be removed from every track")
-        else:
-            if self.change_vars[key].get():
-                self.entries[key].configure(state="normal")
-            self.hints[key].configure(text="enter the new value")
-
-    def save(self) -> None:
-        edits: dict[str, tuple[str, str]] = {}
-        blank_fields: list[str] = []
-        labels = dict(self.FIELDS)
-        for key, _label in self.FIELDS:
-            if not self.change_vars[key].get():
-                continue
-            if self.clear_vars[key].get():
-                edits[key] = ("clear", "")
-                continue
-            value = self.vars[key].get().strip()
-            if not value:
-                blank_fields.append(labels[key])
-            else:
-                edits[key] = ("set", value)
-
-        if blank_fields:
-            self.status.configure(
-                text="Blank values are not saved. Enter a value or choose Clear tag for: " + ", ".join(blank_fields),
-                fg=C["bad"],
-            )
-            return
-        if not edits:
-            self.status.configure(text="Choose at least one field to change.", fg=C["warn"])
-            return
-
-        if "artist" in edits and not messagebox.askyesno(
-            APP_NAME,
-            "Change ARTIST on every track in this album?\n\nThis can be wrong for compilations or albums with guest-track artists.",
-            parent=self.win,
-        ):
-            return
-
-        clears = [labels[k] for k, (mode, _value) in edits.items() if mode == "clear"]
-        if clears and not messagebox.askyesno(
-            APP_NAME,
-            "Remove these tags from every track?\n\n" + "\n".join(f"- {name}" for name in clears),
-            parent=self.win,
-        ):
-            return
-
-        if not self.app.operation_lock.acquire(blocking=False):
-            self.status.configure(text="Another operation is still running. Wait for it to finish.", fg=C["warn"])
-            return
-        self.save_btn.state(["disabled"])
-        self.status.configure(text="Saving tags...", fg=C["muted"])
-
-        def worker() -> None:
-            changed = 0
-            failed: list[str] = []
-            try:
-                for path in self.files:
-                    try:
-                        audio = engine.MutagenFile(str(path), easy=True)
-                        if audio is None:
-                            raise RuntimeError("unsupported metadata")
-                        for key, (mode, value) in edits.items():
-                            if mode == "set":
-                                audio[key] = [value]
-                            else:
-                                try:
-                                    del audio[key]
-                                except KeyError:
-                                    pass
-                        audio.save()
-                        changed += 1
-                    except Exception as exc:
-                        failed.append(f"{path.name}: {exc}")
-            finally:
-                self.app.operation_lock.release()
-            self.app.ui_queue.put(("ui_callback", (self._finish_save, (edits, changed, failed))))
-
-        threading.Thread(target=worker, name="tag-editor-save", daemon=True).start()
-
-    def _finish_save(self, edits: dict[str, tuple[str, str]], changed: int, failed: list[str]) -> None:
-        if not self._alive():
-            return
-        if failed:
-            self.save_btn.state(["!disabled"])
-            self.status.configure(text=f"Saved {changed}; {len(failed)} failed. See Activity log.", fg=C["bad"])
-            for line in failed:
-                self.app.log_app("Tag edit failed: " + line)
-            return
-        self.app.db.set_meta("health_dirty", "1")
-        changed_fields = ", ".join(edits.keys())
-        self.app.log_app(f"Tags updated in {self.folder}: {changed_fields}")
-        self.app.toast.show(f"Tags saved to {changed} tracks. Use Settings > Rockbox database to update the iPod index.", "ok", ms=7000)
-        self.win.destroy()
-
-class PickerDialog:
-    """Shows every candidate the engine's providers return, so the user can choose."""
-
-    TILE = 172
-
-    def __init__(self, app: ArtworkApp, item: LibraryItem) -> None:
-        self.app = app
-        self.item = item
-        F = app.F
-        self.F = F
-        self.queue: queue.Queue[tuple[str, Any]] = queue.Queue()
-        self.stop = threading.Event()
-        self.token: Any = None
-        self.results: list[dict[str, Any]] = []
-        self.selected: Optional[int] = None
-        self.hover: Optional[int] = None
-        self._bg_cache: dict[Any, ImageTk.PhotoImage] = {}
-        self._layout = SimpleNamespace(cols=1, x0=16, tw=0, th=0, gap=14)
-
-        win = tk.Toplevel(app.root)
-        self.win = win
-        win.title(f"Find artwork  ·  {item.title}")
-        win.configure(bg=C["bg"])
-        win.geometry("940x660")
-        win.minsize(720, 480)
-        win.transient(app.root)
-        win.protocol("WM_DELETE_WINDOW", self.close)
-        win.columnconfigure(0, weight=1)
-        win.rowconfigure(2, weight=1)
-
-        head = tk.Frame(win, bg=C["bg"], padx=24)
-        head.grid(row=0, column=0, sticky="ew", pady=(20, 4))
-        tk.Label(head, text="Find artwork", bg=C["bg"], fg=C["text"], font=F.h1).pack(anchor="w")
-        sub = item.title if item.kind == "artist" else f"{item.album}  ·  {item.artist}"
-        tk.Label(head, text=f"{item.kind.title()}  ·  {sub}", bg=C["bg"], fg=C["muted"], font=F.small).pack(anchor="w")
-
-        form = tk.Frame(win, bg=C["bg"], padx=24)
-        form.grid(row=1, column=0, sticky="ew", pady=(14, 12))
-        self.artist_var = tk.StringVar(value=item.artist)
-        self.album_var = tk.StringVar(value=item.album)
-        col = 0
-        for label, var, show in (("Artist", self.artist_var, True), ("Album", self.album_var, item.kind == "album")):
-            if not show:
-                continue
-            box = tk.Frame(form, bg=C["bg"])
-            box.grid(row=0, column=col, sticky="ew", padx=(0, 10))
-            form.columnconfigure(col, weight=1)
-            tk.Label(box, text=label, bg=C["bg"], fg=C["muted"], font=F.small).pack(anchor="w", pady=(0, 3))
-            entry = FieldEntry(box, F, var, width=24)
-            entry.pack(fill="x")
-            entry.entry.bind("<Return>", lambda _e: self.search())
-            col += 1
-        ttk.Button(form, text="Search", style="Accent.TButton", command=self.search).grid(
-            row=0, column=col, sticky="sw")
-
-        area = tk.Frame(win, bg=C["bg"])
-        area.grid(row=2, column=0, sticky="nsew", padx=(14, 4))
-        area.columnconfigure(0, weight=1)
-        area.rowconfigure(0, weight=1)
-        self.canvas = tk.Canvas(area, bg=C["bg"], highlightthickness=0, bd=0, yscrollincrement=1)
-        vsb = ttk.Scrollbar(area, orient="vertical", style="Slim.Vertical.TScrollbar", command=self.canvas.yview)
-        self.canvas.configure(yscrollcommand=vsb.set)
-        self.canvas.grid(row=0, column=0, sticky="nsew")
-        vsb.grid(row=0, column=1, sticky="ns")
-        app._register_scrollable(self.canvas, lambda px: self.canvas.yview_scroll(px, "units"))
-        self.canvas.bind("<Configure>", lambda _e: self.redraw())
-        self.canvas.bind("<Button-1>", self._on_click)
-        self.canvas.bind("<Double-Button-1>", self._on_double)
-        self.canvas.bind("<Motion>", self._on_motion)
-
-        tk.Frame(win, bg=C["border"], height=1).grid(row=3, column=0, sticky="ew")
-        foot = tk.Frame(win, bg=C["sidebar"], padx=24, pady=12)
-        foot.grid(row=4, column=0, sticky="ew")
-        foot.columnconfigure(0, weight=1)
-        left = tk.Frame(foot, bg=C["sidebar"])
-        left.grid(row=0, column=0, sticky="w")
-        self.status = tk.Label(left, text="", bg=C["sidebar"], fg=C["muted"], font=F.small, anchor="w",
-                               justify="left", wraplength=520)
-        self.status.pack(anchor="w")
-        link = tk.Label(left, text="Search in your browser ↗", bg=C["sidebar"], fg=C["accent"], font=F.small,
-                        cursor="hand2")
-        link.pack(anchor="w", pady=(2, 0))
-        link.bind("<Button-1>", lambda _e: self.browser_search())
-        ttk.Button(foot, text="Cancel", style="Ghost.TButton", command=self.close).grid(row=0, column=1, padx=(0, 8))
-        self.use_btn = ttk.Button(foot, text="Use image", style="Accent.TButton", command=self.use_selected)
-        self.use_btn.grid(row=0, column=2)
-        self.use_btn.state(["disabled"])
-
-        win.bind("<Escape>", lambda _e: self.close())
-        win.bind("<Return>", lambda _e: self.use_selected() if self.selected is not None else None)
-        self.search()
-        self.win.after(50, self._poll)
-
-    def alive(self) -> bool:
-        try:
-            return bool(self.win.winfo_exists())
-        except tk.TclError:
-            return False
-
-    def close(self) -> None:
-        self.stop.set()
-        self.app._scrollables.pop(str(self.canvas), None)
-        try:
-            self.win.destroy()
-        except tk.TclError:
-            pass
-
-    def set_status(self, text: str, color: str = "muted") -> None:
-        self.status.configure(text=text, fg=C[color])
-
-    def browser_search(self) -> None:
-        if self.item.kind == "album":
-            q = f"{self.artist_var.get().strip()} {self.album_var.get().strip()} album cover"
-        else:
-            q = f"{self.artist_var.get().strip()} artist photo"
-        webbrowser.open(f"https://www.google.com/search?tbm=isch&q={quote_plus(q)}")
-        self.set_status("Found one in the browser? Drag the image onto the card in the main window, "
-                        f"or copy it and press {MOD_LABEL}V there.")
-
-    def search(self) -> None:
-        self.stop.set()
-        self.stop = threading.Event()
-        stop = self.stop
-        token = object()
-        self.token = token
-        self.results = []
-        self.selected = None
-        self.use_btn.state(["disabled"])
-        self.redraw()
-        artist = self.artist_var.get().strip()
-        album = self.album_var.get().strip()
-        if not artist or (self.item.kind == "album" and not album):
-            self.set_status("Enter a name to search for.", "warn")
-            return
-        root = self.app._valid_music_root(silent=True)
-        folder = root / Path(self.item.relative_path) if root else None
-        args = self.app._engine_args(root or Path("."))
-        args.max_candidates_per_provider = 8
-        out_size = self.app.output_size()
-        kind = self.item.kind
-        self.set_status("Looking up sources…")
-
-        def put(msg: str, payload: Any) -> None:
-            self.queue.put((msg, (token, payload)))
-
-        def worker() -> None:
-            creds = engine.load_credentials()
-            session = engine.requests.Session()
-            limiter = engine.RateLimiter(args)
-            try:
-                print(f"\n[Search online: {artist}{' / ' + album if kind == 'album' else ''}]")
-                cands: list[Any] = []
-                if kind == "album":
-                    if folder is not None and folder.is_dir():
-                        put("status", "Reading embedded artwork from the audio files…")
-                        embedded = engine.find_embedded_album_art(folder, args.max_files_per_album)
-                        if embedded:
-                            cands.append(embedded)
-                    put("status", "Searching Last.fm, Cover Art Archive and TheAudioDB…")
-                    cands += engine.album_candidates(artist, album, creds, args, session, limiter)
-                else:
-                    put("status", "Searching Last.fm, fanart.tv and TheAudioDB…")
-                    cands = engine.artist_candidates(artist, creds, args, session, limiter)
-                cands = engine.unique_candidates(cands)
-                total = len(cands)
-                for i, c in enumerate(cands, 1):
-                    if stop.is_set():
-                        break
-                    put("status", f"Downloading image {i} of {total}…")
-                    try:
-                        if c.image_bytes:
-                            img = load_image(c.image_bytes)
-                        else:
-                            if not c.image_url or engine.contains_placeholder_marker(c.image_url):
-                                continue
-                            limiter.wait("image")
-                            r = session.get(c.image_url, timeout=45, headers={"User-Agent": USER_AGENT})
-                            r.raise_for_status()
-                            img = load_image(r.content)
-                        if engine.image_seems_bad(img, 1, c.source):
-                            print(f"  picker: skipped {c.source} placeholder image")
-                            continue
-                        w, h = img.size
-                        score, _reason = engine.score_downloaded_candidate(img, c, args)
-                        img.thumbnail((PICKER_MAX_EDGE, PICKER_MAX_EDGE), Image.Resampling.LANCZOS)
-                        put("result", {"source": c.source, "img": img, "w": w, "h": h, "score": score,
-                                       "small": min(w, h) < out_size})
-                    except Exception as exc:
-                        print(f"  picker: {c.source} image failed: {exc}")
-            except Exception as exc:
-                put("error", str(exc))
-            finally:
-                session.close()
-                put("done", None)
-
-        threading.Thread(target=worker, name="artwork-picker", daemon=True).start()
-
-    def _poll(self) -> None:
-        if not self.alive():
-            return
-        changed = False
-        try:
-            while True:
-                msg, (token, payload) = self.queue.get_nowait()
-                if token is not self.token:
-                    continue
-                if msg == "status":
-                    self.set_status(payload)
-                elif msg == "error":
-                    self.set_status(f"Search failed: {payload}", "bad")
-                elif msg == "result":
-                    chosen = self.results[self.selected] if self.selected is not None else None
-                    self.results.append(payload)
-                    self.results.sort(key=lambda r: r["score"], reverse=True)
-                    if chosen is not None:
-                        self.selected = self.results.index(chosen)
-                    changed = True
-                elif msg == "done":
-                    self._finish()
-        except queue.Empty:
-            pass
-        if changed:
-            self.redraw()
-        self.win.after(60, self._poll)
-
-    def _finish(self) -> None:
-        n = len(self.results)
-        creds = engine.load_credentials()
-        tip = "" if creds.has_lastfm else "  Adding a Last.fm key in Settings gives many more results."
-        if n:
-            self.set_status(f"{n} image" + ("" if n == 1 else "s") + " found, best match first. "
-                            "Pick one and press Use image." + tip)
-        else:
-            self.set_status("No artwork found. Try another spelling, or search in your browser and "
-                            "drop the image on the card." + tip, "warn")
-
-    # -- drawing -----------------------------------------------------------
-    def _tile_bg(self, state: str) -> ImageTk.PhotoImage:
-        L = self._layout
-        key = (state, L.tw, L.th)
-        if key not in self._bg_cache:
-            border, bw = {"normal": (blend(C["card"], C["border"], 0.55), 1),
-                          "hover": (C["border_hi"], 1.5), "selected": (C["accent"], 2.5)}[state]
-            self._bg_cache[key] = ImageTk.PhotoImage(
-                rounded_panel(int(L.tw), int(L.th), C["card"], C["bg"], 12, border, bw))
-        return self._bg_cache[key]
-
-    def _tile_xy(self, i: int) -> tuple[float, float]:
-        L = self._layout
-        row, col = divmod(i, L.cols)
-        return L.x0 + col * (L.tw + L.gap), 12 + row * (L.th + L.gap)
-
-    def redraw(self) -> None:
-        c = self.canvas
-        c.delete("all")
-        width = max(300, c.winfo_width())
-        T, pad = self.TILE, 10
-        L = self._layout
-        L.tw = T + 2 * pad
-        L.th = pad + T + 10 + self.F.body_b.metrics("linespace") + self.F.small.metrics("linespace") + pad
-        L.cols = max(1, int((width - 20 + L.gap) // (L.tw + L.gap)))
-        L.x0 = max(10, (width - (L.cols * L.tw + (L.cols - 1) * L.gap)) / 2)
-        rows = (len(self.results) + L.cols - 1) // L.cols
-        c.configure(scrollregion=(0, 0, width, max(c.winfo_height(), 24 + rows * (L.th + L.gap))))
-        if not self.results:
-            c.create_text(width / 2, 120, text="Searching…" if self.status.cget("fg") != C["warn"] else "",
-                          fill=C["faint"], font=self.F.body)
-            return
-        for i, r in enumerate(self.results):
-            x, y = self._tile_xy(i)
-            state = "selected" if i == self.selected else ("hover" if i == self.hover else "normal")
-            c.create_image(x, y, image=self._tile_bg(state), anchor="nw")
-            if "photo" not in r:
-                r["photo"] = ImageTk.PhotoImage(rounded_fit(r["img"], T, C["card"], 8))
-            c.create_image(x + pad, y + pad, image=r["photo"], anchor="nw")
-            ty = y + pad + T + 9
-            c.create_text(x + pad, ty, text=r["source"], anchor="nw", fill=C["text"], font=self.F.body_b)
-            notes = [f"{r['w']}×{r['h']}"]
-            color = C["muted"]
-            if i == 0 and len(self.results) > 1:
-                notes.append("best match")
-                color = C["accent_hi"]
-            if r["small"]:
-                notes.append("small")
-                color = C["warn"]
-            elif r["w"] != r["h"]:
-                notes.append("will be cropped")
-            c.create_text(x + pad, ty + self.F.body_b.metrics("linespace") + 1, text="  ·  ".join(notes),
-                          anchor="nw", fill=color, font=self.F.small)
-
-    def _hit(self, event: tk.Event) -> Optional[int]:
-        L = self._layout
-        cx, cy = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
-        for i in range(len(self.results)):
-            x, y = self._tile_xy(i)
-            if x <= cx <= x + L.tw and y <= cy <= y + L.th:
-                return i
-        return None
-
-    def _on_motion(self, event: tk.Event) -> None:
-        i = self._hit(event)
-        if i != self.hover:
-            self.hover = i
-            self.canvas.configure(cursor="hand2" if i is not None else "")
-            self.redraw()
-
-    def _on_click(self, event: tk.Event) -> None:
-        i = self._hit(event)
-        if i is not None:
-            self.selected = i
-            self.use_btn.state(["!disabled"])
-            self.redraw()
-
-    def _on_double(self, event: tk.Event) -> None:
-        if self._hit(event) is not None:
-            self.use_selected()
-
-    def use_selected(self) -> None:
-        if self.selected is None or self.selected >= len(self.results):
-            return
-        r = self.results[self.selected]
-        self.close()
-        self.app.set_pending(r["img"], f"{r['source']}  ·  original {r['w']}×{r['h']}", self.item.id)
 
 
 # ----------------------------------------------------------------------

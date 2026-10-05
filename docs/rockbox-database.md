@@ -24,6 +24,11 @@ also update Rockbox's derived canonical-artist index. Folder moves completed by
 this version's **Fix folders on disk** are recorded locally and can update the
 indexed file paths without guessing which track moved.
 
+Each of these tags must have one value per file, and a year must start with four
+digits. **Library Health → Analyze library → Database** lists the albums that
+would stop an update (for example a FLAC with two `GENRE` fields), and the tag
+editor always saves exactly one value per field.
+
 New tracks, deleted tracks, unrecorded moves, other metadata fields and artwork
 are outside this operation. Use Rockbox's **Update Now** for library additions
 and removals. If an indexed file is missing or ambiguous, this tool stops before

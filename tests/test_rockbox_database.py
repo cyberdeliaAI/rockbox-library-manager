@@ -296,6 +296,11 @@ class DatabaseTests(unittest.TestCase):
     def test_database_or_tags_changed_after_preview_block_apply(self):
         self.edit(); plan = rb.preview_update(self.music)
         audio = FLAC(self.tracks[0]); audio["album"] = ["Edited again"]; audio.save()
+        # Reproduce coarse/preserved timestamps, rather than relying on elapsed
+        # wall-clock time between two tag writes on the CI filesystem.
+        stamp = plan.track_stamps[self.tracks[0].resolve()]
+        self.assertEqual(self.tracks[0].stat().st_size, stamp[0])
+        rb.os.utime(self.tracks[0], ns=(self.tracks[0].stat().st_atime_ns, stamp[1]))
         with self.assertRaisesRegex(rb.DatabaseError, "Music files changed"):
             rb.apply_update(plan, self.backups)
         plan = rb.preview_update(self.music)
