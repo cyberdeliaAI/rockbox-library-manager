@@ -6,6 +6,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
+from . import artwork_engine as engine
 from . import media_tools as media
 
 
@@ -33,7 +34,7 @@ class MediaDialog:
         tk.Label(frame, text="Prepare media for PodBox", font=app.F.title,
                  bg=colors["panel"], fg=colors["text"], anchor="w").pack(fill="x")
         tk.Label(frame, text=f"FLAC: 16-bit, up to 44.1 kHz. Artwork: {self.size}×{self.size} px (Settings).\n"
-                 "Preview a folder or the whole library, then select files to change. Small artwork needs a larger source.",
+                 "Preview a folder or the whole library, then select files to change. Small artwork is replaced only by a larger online source.",
                  font=app.F.small, bg=colors["panel"], fg=colors["muted"],
                  anchor="w", justify="left", wraplength=840).pack(fill="x", pady=(5, 10))
         backup_text = f"Local backups: {self.backup_root}" if self.backups else "Local backups OFF — selected originals will be replaced."
@@ -78,7 +79,8 @@ class MediaDialog:
         self.controls.append(self.scan_btn)
         select = tk.Frame(frame, bg=colors["panel"])
         select.pack(fill="x", pady=8)
-        for label, kind in (("Select FLAC", "flac"), ("Select large artwork", "artwork"), ("Select both", "all"), ("Clear selection", "none")):
+        for label, kind in (("Select FLAC", "flac"), ("Select large artwork", "artwork"), ("Select both", "all"),
+                            ("Select small artwork", "small_artwork"), ("Clear selection", "none")):
             button = ttk.Button(select, text=label, command=lambda k=kind: self.select(k))
             button.pack(side="left", padx=(0, 6))
             self.controls.append(button)
@@ -90,11 +92,12 @@ class MediaDialog:
         content.pack(fill="both", expand=True)
         content.rowconfigure(0, weight=1)
         content.columnconfigure(0, weight=1)
-        self.tree = ttk.Treeview(content, columns=("kind", "change", "file"), show="headings", selectmode="extended")
+        self.tree = ttk.Treeview(content, columns=("kind", "change", "file"), show="headings", selectmode="extended",
+                                 style="Health.Treeview")  # the dark list style; the default clam rows are white
         for name, title, width in (("kind", "Type", 105), ("change", "Current → target", 350), ("file", "File", 480)):
             self.tree.heading(name, text=title)
             self.tree.column(name, width=width, minwidth=70, stretch=name == "file")
-        scroll = ttk.Scrollbar(content, command=self.tree.yview)
+        scroll = ttk.Scrollbar(content, style="Slim.Vertical.TScrollbar", command=self.tree.yview)
         horizontal = ttk.Scrollbar(content, orient="horizontal", command=self.tree.xview)
         self.tree.configure(yscrollcommand=scroll.set, xscrollcommand=horizontal.set)
         scroll.grid(row=0, column=1, sticky="ns")
@@ -112,14 +115,14 @@ class MediaDialog:
 
     def select(self, kind):
         self.tree.selection_set([key for key, c in self.candidates.items()
-                                 if c.kind in ("flac", "artwork") and kind in (c.kind, "all")])
+                                 if c.kind == kind or (kind == "all" and c.kind in ("flac", "artwork"))])
 
     def selected(self):
         return [self.candidates[k] for k in self.tree.selection() if k in self.candidates]
 
     def update_buttons(self):
         selected = self.selected()
-        self.apply_btn.state(["!disabled" if not self.running and any(c.kind != "small_artwork" for c in selected) else "disabled"])
+        self.apply_btn.state(["!disabled" if not self.running and selected else "disabled"])
         self.find_btn.state(["!disabled" if not self.running and len(selected) == 1 and selected[0].kind != "flac" else "disabled"])
 
     def detail(self, text):
@@ -160,7 +163,7 @@ class MediaDialog:
         threading.Thread(target=worker, name="media-tools", daemon=True).start()
 
     def refresh_artwork(self, completed):
-        from .gui import detect_artwork
+        from .library import detect_artwork
         indexed_root = self.app.db.get_meta("music_root", "")
         if not indexed_root or Path(indexed_root).resolve() != self.library_root:
             return
@@ -249,8 +252,33 @@ class MediaDialog:
         except OSError as exc:
             messagebox.showerror("Music folder", str(exc), parent=self.win)
 
+    def make_fetcher(self):
+        """Search every artwork source for a folder's artist/album, off the UI thread.
+
+        Settings are read here, on the UI thread. Only sources at least as large as
+        the configured size are accepted, and the folder names must match the tags.
+        """
+        args = self.app._engine_args(self.library_root)
+        args.min_source_size = args.max_size = self.size
+        args.max_album_candidates_per_provider = 2
+        creds = engine.load_credentials()
+        session = engine.requests.Session()
+        limiter = engine.RateLimiter(args)
+        library_root = self.library_root
+
+        def fetch(path):
+            folder = path.parent
+            kind = engine.folder_kind(folder, library_root)
+            print(f"\n[Find larger {kind} artwork: {folder}]")
+            image, source, notes = engine.find_best_image(kind, folder, args, creds, session, limiter)
+            if image is None:
+                raise media.MediaError(f"No artwork of at least {self.size}×{self.size} found ({notes}); original kept")
+            print(f"  selected: {source} ({notes})")
+            return image
+        return fetch
+
     def apply(self):
-        chosen = [c for c in self.selected() if c.kind in ("flac", "artwork")]
+        chosen = self.selected()
         if not chosen:
             return
         if any(c.kind == "flac" for c in chosen):
@@ -260,14 +288,20 @@ class MediaDialog:
                 messagebox.showerror("FFmpeg", str(exc), parent=self.win)
                 return
         backup = f"Verified original copies will be saved to:\n{self.backup_root}" if self.backups else "LOCAL BACKUPS ARE OFF. The originals will be replaced without a recovery copy."
+        small = sum(c.kind == "small_artwork" for c in chosen)
+        small_text = (f"{small} small artwork: searched online (Cover Art Archive, Deezer, Apple Music, TheAudioDB and "
+                      f"sources with a key). Replaced only by a source of at least {self.size}×{self.size} that matches the "
+                      "folder's tags; otherwise kept. " if small else "")
         if not messagebox.askyesno("Replace selected media",
                 f"Replace {len(chosen)} selected files in:\n{self.music_root}\n\n{backup}\n\n"
                 "FLAC conversion reduces audio resolution to 16-bit and at most 44.1 kHz. Tags and embedded covers are retained. "
-                f"Large artwork becomes {self.size}×{self.size}; non-square images are centre cropped. "
-                "Small artwork is skipped. Keep the player connected.", parent=self.win):
+                f"Large and progressive artwork becomes a baseline {self.size}×{self.size} JPEG; non-square images are centre cropped. "
+                f"{small_text}Keep the player connected.", parent=self.win):
             return
+        fetch = self.make_fetcher() if small else None
         self.run("Preparing media", lambda: media.apply(self.music_root, chosen, self.size,
-                 self.backup_root if self.backups else None, self.ffmpeg, self.app.cancel_event, self.progress))
+                 self.backup_root if self.backups else None, self.ffmpeg, self.app.cancel_event, self.progress,
+                 fetch_artwork=fetch))
 
     def find_artwork(self):
         selected = self.selected()

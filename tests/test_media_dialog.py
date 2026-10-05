@@ -63,7 +63,8 @@ class MediaDialogTests(unittest.TestCase):
         small_key = next(k for k, c in self.dialog.candidates.items() if c.kind == "small_artwork")
         self.dialog.tree.selection_set(small_key)
         self.root.update()
-        self.assertTrue(self.dialog.apply_btn.instate(["disabled"]))
+        # Small artwork can be applied (an online search for a larger source) or chosen by hand.
+        self.assertTrue(self.dialog.apply_btn.instate(["!disabled"]))
         self.assertTrue(self.dialog.find_btn.instate(["!disabled"]))
         self.dialog.select("all")
         self.root.update()
@@ -82,6 +83,40 @@ class MediaDialogTests(unittest.TestCase):
         for button in (self.dialog.apply_btn, self.dialog.find_btn, self.dialog.close_btn, self.dialog.cancel_btn):
             self.assertTrue(button.winfo_ismapped())
             self.assertLessEqual(button.winfo_rooty() - self.dialog.win.winfo_rooty() + button.winfo_height(), self.dialog.win.winfo_height())
+
+    def test_small_artwork_is_replaced_by_a_larger_online_source_with_backup(self):
+        small = (self.music / "Small/folder.jpg").read_bytes()
+        self.dialog.scan_btn.invoke(); self.wait()
+        self.dialog.select("small_artwork"); self.root.update()
+        self.assertEqual([c.kind for c in self.dialog.selected()], ["small_artwork"])
+        found = Image.new("RGB", (800, 600), "green")
+        with patch("rockbox_manager.media_dialog.engine.find_best_image",
+                   return_value=(found, "Deezer", "actual 800x600")) as search, \
+                patch("rockbox_manager.media_dialog.messagebox.askyesno", return_value=True) as confirm:
+            self.dialog.apply_btn.invoke()
+            self.wait()
+        self.assertIn("searched online", confirm.call_args.args[1])
+        kind, folder = search.call_args.args[:2]
+        self.assertEqual((kind, folder), ("artist", self.music / "Small"))
+        self.assertEqual(search.call_args.args[2].min_source_size, 300)
+        with Image.open(self.music / "Small/folder.jpg") as image:
+            self.assertEqual((image.size, image.format), ((300, 300), "JPEG"))
+            self.assertFalse(image.info.get("progressive"))
+        backups = list((self.base / "Config/media-backups").glob("*/originals/Small/folder.jpg"))
+        self.assertEqual(backups[0].read_bytes(), small)
+        self.assertIn("1 files replaced", self.dialog.status.cget("text"))
+
+    def test_small_artwork_without_a_larger_source_is_kept(self):
+        small = (self.music / "Small/folder.jpg").read_bytes()
+        self.dialog.scan_btn.invoke(); self.wait()
+        self.dialog.select("small_artwork"); self.root.update()
+        with patch("rockbox_manager.media_dialog.engine.find_best_image", return_value=(None, "", "No artwork found")), \
+                patch("rockbox_manager.media_dialog.messagebox.askyesno", return_value=True):
+            self.dialog.apply_btn.invoke()
+            self.wait()
+        self.assertEqual((self.music / "Small/folder.jpg").read_bytes(), small)
+        self.assertIn("original kept", self.dialog.details.get("1.0", "end"))
+        self.assertEqual([c.kind for c in self.dialog.candidates.values()].count("small_artwork"), 1)
 
     def test_settings_persist_and_backup_disabled_confirmation_is_explicit(self):
         self.dialog.close()
