@@ -1,6 +1,6 @@
 # Prepare media for PodBox
 
-Version 1.2.0-beta.1 adds **Settings → Prepare media for PodBox → Scan and
+Version 1.2.0 adds **Settings → Prepare media for PodBox → Scan and
 prepare…**. This is a separate maintenance scan; the normal library Rescan
 stays focused on the artist/album index.
 
@@ -46,8 +46,8 @@ lists these files so you can delete them.
 
 ## Select and apply
 
-Use Ctrl/Shift to select rows, or **Select FLAC**, **Select large artwork** or
-**Select both**. No files are selected automatically after a scan. The final
+Use Ctrl/Shift to select rows, or **Select rows** to select all FLAC, all large
+artwork, both, or all small artwork. No files are selected automatically after a scan. The final
 confirmation lists the operation and whether original backups are enabled.
 
 - **FLAC:** convert to 16-bit at 44.1 kHz, preserving lower sample rates and
@@ -63,7 +63,7 @@ confirmation lists the operation and whether original backups are enabled.
 - **Small artwork:** either dimension below the chosen size is too small.
   For example, 200×200 needs replacement when the setting is 300×300. It is
   reported separately and never automatically enlarged. Select the rows (or
-  **Select small artwork**) and choose **Apply selected…**: each folder is
+  **Select rows → All small artwork**) and choose **Apply selected…**: each folder is
   searched online like an automatic fetch (Cover Art Archive, Deezer, Apple
   Music, TheAudioDB and the sources you have keys for). The folder names must
   match the tags, and only a source of at least the chosen size is accepted;
@@ -128,4 +128,4 @@ and take substantially longer than scanning.
 
 After finishing, safely eject and restart the player to reload artwork. For
 converted audio, use Rockbox's **Database → Update Now** to refresh file
-properties. This beta still needs validation on a physical iPod.
+properties. These operations have not yet been validated on a physical iPod.

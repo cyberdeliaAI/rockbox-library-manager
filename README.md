@@ -32,13 +32,6 @@ The full license is included in [LICENSE](LICENSE). See also
 
 ## Versions
 
-**Version 1.2.0-beta.1** adds **Settings → Prepare media for PodBox → Scan and
-prepare…**: scan hi-res FLAC, resize oversized artwork to your configured size,
-and find larger sources for undersized artwork. Original media backups are
-enabled by default and can be disabled in Settings. FLAC conversion requires
-FFmpeg. **Choose folder…** lets you inspect just a known problem folder instead
-of the full library. See the [media preparation guide](docs/media-preparation.md).
-
 **Version 1.0.0** is the first public release.
 
 **Version 1.1.0** includes a fix for PodBox's `/<HDD0>/Music/...` database
@@ -46,6 +39,16 @@ paths, including on Windows. It provides **Settings → Rockbox database…** fo
 updates to an existing iPod index, making verified local backups and restoring
 them. This is experimental until tested on the player; see the
 [database update and recovery guide](docs/rockbox-database.md).
+
+**Version 1.2.0** adds **Settings → Prepare media for PodBox → Scan and
+prepare…**: convert hi-res FLAC, resize oversized or progressive artwork, and
+replace undersized artwork with a larger online source, with original-media
+backups enabled by default (FLAC conversion requires FFmpeg). Artwork search now
+also uses Deezer, Apple Music and Cover Art Archive release groups without a key,
+and Discogs with a token. The tag editor suggests years and genres and shows a
+review before saving, and Library Health finds the tag problems that stop the
+Rockbox database update or split Rockbox's genre list. See the
+[media preparation guide](docs/media-preparation.md) and [CHANGELOG](CHANGELOG.md).
 
 ## Screenshots
 

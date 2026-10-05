@@ -79,12 +79,17 @@ class MediaDialog:
         self.controls.append(self.scan_btn)
         select = tk.Frame(frame, bg=colors["panel"])
         select.pack(fill="x", pady=8)
-        for label, kind in (("Select FLAC", "flac"), ("Select large artwork", "artwork"), ("Select both", "all"),
-                            ("Select small artwork", "small_artwork"), ("Clear selection", "none")):
-            button = ttk.Button(select, text=label, command=lambda k=kind: self.select(k))
-            button.pack(side="left", padx=(0, 6))
-            self.controls.append(button)
-        self.status = tk.Label(frame, text="Ready to scan. Select rows with Ctrl/Shift, or use the selection buttons.",
+        # One menu instead of a row of buttons, so it fits at 200 % scaling with any font.
+        self.select_btn = ttk.Menubutton(select, text="Select rows")
+        menu = tk.Menu(self.select_btn, tearoff=False)
+        for label, kind in (("All FLAC", "flac"), ("All large artwork", "artwork"),
+                            ("FLAC and large artwork", "all"), ("All small artwork", "small_artwork"),
+                            ("Clear selection", "none")):
+            menu.add_command(label=label, command=lambda k=kind: self.select(k))
+        self.select_btn["menu"] = menu
+        self.select_btn.pack(side="left")
+        self.controls.append(self.select_btn)
+        self.status = tk.Label(frame, text="Ready to scan. Select rows with Ctrl/Shift, or use Select rows.",
                                font=app.F.small, bg=colors["panel"], fg=colors["text"],
                                anchor="w", justify="left", wraplength=840)
         self.status.pack(fill="x", pady=(0, 8))

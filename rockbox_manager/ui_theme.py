@@ -81,6 +81,7 @@ def apply_style(root: tk.Misc, F: SimpleNamespace) -> None:
     button("Small.TButton", C["input"], C["hover"], C["text"], F.small, (9, 4))
     button("SmallAccent.TButton", C["accent"], C["accent_hi"], "#07110f", F.small_b, (9, 4))
     button("Danger.TButton", C["input"], blend(C["bad"], C["input"], 0.55), C["bad"], F.body, (14, 7))
+    button("TMenubutton", C["input"], C["hover"], C["text"], F.body, (12, 6))
 
     st.layout("Slim.Vertical.TScrollbar", [
         ("Vertical.Scrollbar.trough", {"sticky": "ns", "children": [

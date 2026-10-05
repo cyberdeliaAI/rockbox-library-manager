@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.2.0
+
+Releases the media preparation from 1.2.0-beta.1 together with:
 
 - Find artwork in more places without a key: Cover Art Archive release groups
   (1200 px), Deezer covers and artist pictures, and Apple Music covers. Discogs
@@ -21,7 +23,9 @@
 - Media preparation: rewrite progressive JPEG artwork as baseline, replace small
   artwork with a larger online source (with backups), keep the scan cache valid
   after reconnecting the player, and report leftover temporary files. The
-  results list uses the dark list style (its rows were white with light text).
+  results list uses the dark list style (its rows were white with light text),
+  and one **Select rows** menu replaces the selection buttons so the dialog fits
+  at 200 % scaling on Linux.
 - Store a Discogs token; drop the unused Last.fm shared secret. Credentials are
   written atomically and readable by the owner only. Downloaded images are
   limited to 25 MB.
