@@ -112,6 +112,10 @@ class DatabaseDialog:
             button.state(["!disabled"])
         self.plan = result if isinstance(result, database.UpdatePlan) else None
         if error:
+            if (error.startswith("Multiple ") and " values in " in error) or "Cannot interpret year" in error:
+                # Both come from music-file tags, which Library Health can list in one pass.
+                error += ("\n\nLibrary Health → Analyze library → Database lists every album with several "
+                          "values in one tag or an unreadable year; fix them in the tag editor, then preview again.")
             self.status.configure(text="Operation stopped. See the details below.")
             self.show_text(error)
             self.app.log_app(f"Rockbox database: {error}")

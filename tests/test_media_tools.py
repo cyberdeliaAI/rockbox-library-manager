@@ -255,3 +255,63 @@ class MediaTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_progressive_artwork_at_the_right_size_is_rewritten_as_baseline(self):
+        path = self.root / "Artist/Album/folder.jpg"
+        path.parent.mkdir(parents=True)
+        Image.new("RGB", (300, 300), "red").save(path, "JPEG", progressive=True)
+        self.image("Artist/Fine/folder.jpg", (300, 300))
+        candidates = self.scan().candidates
+        self.assertEqual([(c.relative, c.kind) for c in candidates], [("Artist/Album/folder.jpg", "artwork")])
+        self.assertIn("progressive JPEG → baseline", candidates[0].description(300))
+        result = self.apply(candidates)
+        self.assertEqual(result.completed, ["Artist/Album/folder.jpg"])
+        with Image.open(path) as output:
+            self.assertEqual(output.size, (300, 300))
+            self.assertFalse(output.info.get("progressive"))
+        self.assertFalse(self.scan().candidates)
+
+    def test_cache_survives_a_new_device_number_and_mount_point(self):
+        player = self.base / "IPOD"
+        (player / ".rockbox").mkdir(parents=True)
+        self.root = player / "Music"
+        self.image("Artist/folder.jpg", (600, 600))
+        self.assertEqual(self.scan().cached, 0)
+        moved = self.base / "IPOD 1"
+        player.rename(moved)  # reconnected under another name (or drive letter)
+        self.root = moved / "Music"
+        real = media.signature
+        with patch.object(media, "signature", side_effect=lambda p: [real(p)[0] + 2, *real(p)[1:]]), \
+                patch.object(media, "image_info", side_effect=AssertionError("unchanged files should be cached")):
+            again = self.scan()
+        self.assertEqual((again.cached, len(again.candidates)), (1, 1))
+
+    def test_leftover_temporary_files_are_reported_not_scanned(self):
+        self.image("Artist/Album/folder.jpg", (300, 300))
+        (self.root / "Artist/Album/.rlm-abc123.flac").write_bytes(b"partial")
+        result = self.scan()
+        self.assertFalse(result.candidates)
+        self.assertEqual(len(result.errors), 1)
+        self.assertIn("Artist/Album/.rlm-abc123.flac: leftover temporary file", result.errors[0])
+
+    def test_small_artwork_needs_a_fetcher_and_is_replaced_by_a_large_enough_image(self):
+        path = self.image("Artist/Album/folder.jpg", (200, 200))
+        small = self.scan().candidates
+        with self.assertRaises(media.MediaError):
+            self.apply(small)
+        def fetch(source):
+            self.assertEqual(source, path)
+            return Image.new("RGB", (1000, 1000), "blue")
+        result = media.apply(self.root, small, 300, self.base / "backups", "", self.cancel, fetch_artwork=fetch)
+        self.assertEqual((result.completed, result.errors), (["Artist/Album/folder.jpg"], []))
+        with Image.open(path) as output:
+            self.assertEqual(output.size, (300, 300))
+        def too_small(_source):
+            return Image.new("RGB", (100, 100))
+        path.unlink(); self.image("Artist/Album/folder.jpg", (200, 200))
+        before = path.read_bytes()
+        result = media.apply(self.root, self.scan().candidates, 300, None, "", self.cancel, fetch_artwork=too_small)
+        self.assertEqual(result.completed, [])
+        self.assertIn("too small", result.errors[0])
+        self.assertEqual(path.read_bytes(), before)
+        self.assertFalse(list(path.parent.glob(".rlm-*")))

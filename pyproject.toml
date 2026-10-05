@@ -1,0 +1,37 @@
+[project]
+name = "rockbox-library-manager"
+dynamic = ["version"]
+description = "Desktop companion for PodBox: artwork, library health, album tags and the Rockbox database"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "GPL-2.0-only"
+license-files = ["LICENSE"]
+dependencies = ["mutagen>=1.48", "Pillow>=12.0", "requests>=2.33"]
+
+[project.optional-dependencies]
+dnd = ["tkinterdnd2"]
+
+[project.scripts]
+rockbox-library-manager = "rockbox_manager.launcher:main"
+
+[dependency-groups]
+dev = ["ruff>=0.11,<1"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "rockbox_manager/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["rockbox_manager"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+# Syntax errors and pyflakes (undefined names, unused imports). The compact
+# style of the adapted artwork engine is kept as it is.
+select = ["E9", "F"]

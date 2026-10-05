@@ -123,10 +123,12 @@ class DuplicateDialogTests(unittest.TestCase):
         self.assertFalse(self.errors, '\n'.join(self.errors))
 
     def test_font_roles_exist(self):
-        tree = ast.parse(Path(gui.__file__).read_text(encoding='utf-8'))
-        used = {node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)
-                and ((isinstance(node.value, ast.Attribute) and node.value.attr == 'F')
-                     or (isinstance(node.value, ast.Name) and node.value.id == 'F'))}
+        used = set()
+        for module in Path(gui.__file__).parent.glob('*.py'):
+            tree = ast.parse(module.read_text(encoding='utf-8'))
+            used |= {node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)
+                     and ((isinstance(node.value, ast.Attribute) and node.value.attr == 'F')
+                          or (isinstance(node.value, ast.Name) and node.value.id == 'F'))}
         self.assertFalse(used - set(vars(self.app.F)), f'Undefined font roles: {used - set(vars(self.app.F))}')
 
     def test_all_buttons_visible_at_four_scaling_levels(self):

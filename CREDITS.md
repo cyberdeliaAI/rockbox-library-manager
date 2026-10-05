@@ -23,6 +23,15 @@ The desktop interface and additional library-management features are maintained
 in this companion project by [cyberdeliaAI](https://github.com/cyberdeliaAI).
 Full credit for the original artwork tool remains with Anthony Fletcher.
 
+## Tagcast
+
+The online sources in [rockbox_manager/sources.py](rockbox_manager/sources.py)
+(MusicBrainz release groups, Deezer, Apple Music, Discogs, Last.fm, TheAudioDB and
+fanart.tv lookups, title matching and per-host request pacing) are adapted from
+[Tagcast](https://github.com/cyberdeliaAI/tagcast)'s `sources.py`, a metadata
+editor for iBroadcast by the same author, published under the MIT licence. They
+are included here under GNU GPL v2 like the rest of this application.
+
 ## Rockbox and other contributors
 
 PodBox builds on [Rockbox](https://www.rockbox.org/) and other projects credited
