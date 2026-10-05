@@ -40,6 +40,16 @@ updates to an existing iPod index, making verified local backups and restoring
 them. This is experimental until tested on the player; see the
 [database update and recovery guide](docs/rockbox-database.md).
 
+**Version 1.2.0** adds **Settings → Prepare media for PodBox → Scan and
+prepare…**: convert hi-res FLAC, resize oversized or progressive artwork, and
+replace undersized artwork with a larger online source, with original-media
+backups enabled by default (FLAC conversion requires FFmpeg). Artwork search now
+also uses Deezer, Apple Music and Cover Art Archive release groups without a key,
+and Discogs with a token. The tag editor suggests years and genres and shows a
+review before saving, and Library Health finds the tag problems that stop the
+Rockbox database update or split Rockbox's genre list. See the
+[media preparation guide](docs/media-preparation.md) and [CHANGELOG](CHANGELOG.md).
+
 ## Screenshots
 
 Screenshots from version 1.1.0-beta.1 on Windows.
@@ -56,14 +66,26 @@ Screenshots from version 1.1.0-beta.1 on Windows.
 
 - Browse artists and albums with a local SQLite index and thumbnail cache.
 - Find artwork online, extract embedded covers, or choose your own images.
+  Cover Art Archive, Deezer, Apple Music and TheAudioDB work without a key;
+  Last.fm, fanart.tv and Discogs add more with a key.
 - Write Rockbox-compatible baseline JPEG artwork as `folder.jpg`.
 - Search artist names without worrying about case or accents.
 - Check for duplicate artists, folder/tag mismatches, inconsistent album tags,
   and missing or unreadable tags.
 - Resolve duplicate artists by merging their library entries, consolidating
   their folders, or keeping them separate.
-- Edit selected album tags. Clearing a tag requires an explicit choice and
-  confirmation.
+- Check for tags that block the Rockbox database update (several values in one
+  tag, unreadable years), combined genre text such as `Pop;Rock`, genre spellings
+  Rockbox lists separately (`Hip Hop` / `Hip-Hop`), and missing years, genres and
+  track numbers.
+- Edit selected album tags with online suggestions for the year and genre, and
+  review every change before it is saved. Clearing a tag requires an explicit
+  choice and confirmation.
+- Scan FLAC headers and artwork dimensions with a local cache, then convert
+  selected hi-res FLAC to 16-bit / up to 44.1 kHz, resize large artwork, or
+  rewrite progressive JPEG artwork (which Rockbox can't show) as baseline JPEG.
+- Replace artwork smaller than the configured size with a larger online source,
+  or open the artwork search to choose one; small images are never upscaled.
 - Use the same artwork engine from the command line.
 
 ## Install and run
@@ -128,6 +150,63 @@ Provider API keys can be configured in the application. Settings, credentials,
 the library database and thumbnails are stored in the existing application-data
 directory, so replacing the application folder does not reset them.
 
+### Online sources and keys
+
+| Source | Used for | Key |
+|---|---|---|
+| MusicBrainz + Cover Art Archive | Covers, first-release year, genres | None |
+| Deezer | Covers (1000 px), artist pictures, year and genres | None |
+| Apple Music (iTunes Search) | Covers (1200 px), year and genre | None |
+| TheAudioDB | Covers, artist pictures, year and genres | None (public key) |
+| Last.fm | Covers, artist pictures, listener tags as genres | API key: [last.fm/api/account/create](https://www.last.fm/api/account/create) |
+| fanart.tv | Artist pictures | Personal API key: [fanart.tv/get-an-api-key](https://fanart.tv/get-an-api-key/) |
+| Discogs | Covers, artist pictures, original year and styles | Personal token: Discogs → Settings → Developers |
+
+Enter keys in **Settings → Online sources**. They are stored in
+`artist_art_credentials.json` in the application-data directory (on macOS and
+Linux readable by your account only). The Last.fm shared secret is not needed; an older saved
+secret is removed the next time settings are saved.
+
+Searches leave out edition text such as `(2018 Remaster)` or `- Deluxe Edition`
+and ignore case, accents and a leading "The". Automatic fetches only use a cover
+from Cover Art Archive, Deezer, Apple Music or Discogs when artist and album
+match closely (85%); **Search online** also shows nearer misses so you can
+choose. Requests are spaced per source (MusicBrainz once
+a second, Apple Music every 3 seconds) across the whole application.
+
+### Library Health
+
+**Analyze library** reads three tracks per album (first, middle and last) so a
+scan of a slow iPod disk stays short. Tick **Check every track (slower)** to read
+them all, which also finds duplicate track numbers and problems in the middle of
+an album. The filters group the results:
+
+- **Duplicates**: artist folders that differ only in accents, case or punctuation.
+- **Tags**: folder names that don't match the tags, albums whose tracks disagree,
+  and missing or unreadable tags.
+- **Database**: several values in one tag (for example two `GENRE` fields) and
+  years such as `c. 1982`. Rockbox keeps one value per tag, and
+  **Settings → Rockbox database…** stops at these files until they are fixed.
+- **Genres**: combined text such as `Pop;Rock`, which Rockbox lists as a genre of
+  its own, and spellings it lists separately (`Hip Hop` next to `Hip-Hop`; case
+  differences are already merged by Rockbox).
+- **Missing info**: no year, no genre, or missing or duplicate track numbers.
+
+Select an album issue and choose **Edit tags…** to fix it.
+
+### Editing album tags
+
+The tag editor shows every value a track has. Tick the fields to change; a
+saved field gets exactly one value on every track. **Find year and genre**
+searches the online sources and lists their years and genres; click one to put
+it in the form. MusicBrainz and Discogs give the first-release year, Deezer and
+Apple Music the date of their edition (for a remaster, the remaster's date).
+Years must be `YYYY`, `YYYY-MM` or `YYYY-MM-DD`.
+
+**Review and save…** lists the changes before anything is written, with identical
+changes grouped (for example `Genre: “Pop;Rock” → “Pop” · 12 tracks`). Tracks that
+already have the new values are not rewritten.
+
 ### Duplicate artists
 
 Library Health offers three choices for names such as `Ali Farka Toure` and
@@ -159,14 +238,18 @@ python rockbox_library_manager.py artwork --help
 python rockbox_library_manager.py artwork both "/path/to/Music"
 ```
 
+Installing the folder as a package (`python -m pip install -e .`) also provides a
+`rockbox-library-manager` command with the same options.
+
 On Windows, a music path might be `"E:\Music"`; on macOS, it might be
 `"/Volumes/iPod/Music"`. The short form `both "/path/to/Music"` is also supported.
 
 ## Tests
 
-The included tests exercise the real duplicate-resolution dialog using
-temporary music folders, settings and databases. The silent FLAC fixture is
-test data. No personal music library is needed.
+The tests use temporary music folders, settings and databases, and exercise the
+real Tk dialogs. Online sources are tested with recorded answers, so no network
+is needed. The silent FLAC fixture is test data. No personal music library is
+needed.
 
 With your virtual environment activated and a working Tk display:
 
@@ -181,12 +264,39 @@ xvfb-run -a -s "-screen 0 1920x1200x24" python -m unittest discover -s tests -v
 ```
 
 Checks cover dialog controls, scaling, font roles, remembered identity choices,
-merge confirmation, preservation of files and artwork, and album-name conflicts.
+merge confirmation, preservation of files and artwork, album-name conflicts,
+online-source parsing and matching, the tag editor's review and single-value
+writes, and every Library Health check.
+Media tests also exercise cached scans, actual FFmpeg conversion, metadata and
+cover preservation, backup choices, cancellation, stale previews and damaged
+input. Install FFmpeg on PATH to run the audio integration tests; those tests
+are skipped when it is absent. Windows CI installs FFmpeg and runs them.
+
+Lint with [ruff](https://docs.astral.sh/ruff/) (`pip install ruff`):
+
+```sh
+ruff check rockbox_manager tests
+```
+
+The GitHub workflow runs the tests on Windows, macOS and Linux with Python 3.10
+and 3.13; FFmpeg is installed on Windows and Linux for the conversion tests.
 
 ## Project layout
 
 - `rockbox_library_manager.py`: application entry point.
-- `rockbox_manager/gui.py`: desktop UI, Library Health and tag editor.
-- `rockbox_manager/artwork_engine.py`: artwork lookup and image processing.
 - `rockbox_manager/launcher.py`: GUI and command-line dispatch.
-- `tests/`: duplicate-resolution regression tests.
+- `rockbox_manager/gui.py`: main window, library browser, settings and activity log.
+- `rockbox_manager/library.py`: SQLite library index and the fast folder scanner.
+- `rockbox_manager/health.py`: Library Health checks.
+- `rockbox_manager/tags.py`: reading, planning and writing tags (no UI).
+- `rockbox_manager/tag_editor.py`: album tag editor with online suggestions and review.
+- `rockbox_manager/picker.py`: online artwork picker.
+- `rockbox_manager/folders.py`: consolidating duplicate artist folders on disk.
+- `rockbox_manager/artwork_engine.py`: artwork lookup, scoring and image processing.
+- `rockbox_manager/sources.py`: online metadata sources (adapted from Tagcast).
+- `rockbox_manager/media_tools.py`: cached inspection and verified media replacement.
+- `rockbox_manager/media_dialog.py`: media selection, conversion and resizing UI.
+- `rockbox_manager/rockbox_database.py`: Rockbox database (TCH v16) updates and backups.
+- `rockbox_manager/database_dialog.py`: database preview, backup and restore UI.
+- `rockbox_manager/common.py`, `ui_theme.py`, `widgets.py`: shared helpers, theme and widgets.
+- `tests/`: unit and dialog tests.
