@@ -14,15 +14,6 @@ and its artwork engine is adapted from his
 [`art_fetch.py`](https://github.com/anthonyfletcher/podbox/blob/master/tools/art_fetch/art_fetch.py).
 His work is the foundation of this project.
 
-Rockbox Library Manager was created specifically as a helper for PodBox, adding
-a desktop interface and library-management tools around that foundation.
-This companion application is maintained separately by
-[cyberdeliaAI](https://github.com/cyberdeliaAI).
-
-Thank you, Anthony, for creating PodBox and sharing the artwork tool that made
-this application possible. See [CREDITS.md](CREDITS.md) for source references and
-acknowledgements.
-
 ## License
 
 This project is distributed under the **GNU General Public License, version 2
