@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.2.1
+
+- Check duplicate-folder destinations across all source folders before moving
+  anything, and refuse destinations that appear during the merge. Preserve
+  identical-file deduplication and alternate artist artwork.
+- Report interrupted folder merges accurately, retain completed entry moves for
+  Rockbox database updates, and rescan partially changed libraries.
+- Keep the previous library index and indexed root after directory read errors
+  or cancellation. Publish successful scans in one SQLite transaction; report
+  incomplete scans instead of showing them as complete.
+- Tie indexed operations and pending artwork to the scanned music root. Refuse
+  stale-root saves, serialize manual saves with other operations, and avoid
+  applying late save results to a different library index.
+- Handle separator-only genre tags without aborting Library Health.
+- Cache the artwork candidate actually selected, including interactive retries
+  and multiple images from the same provider.
+- Fall back to online album artwork when embedded artwork is rejected, while
+  retaining embedded-first selection and existing cache controls.
+- Redact API keys and tokens from artwork-provider error messages.
+- Restore four media regression tests that were outside their test class, and
+  add regression coverage for the corrected folder, scan, artwork and UI paths.
+- Add the approved AGENTS.md repository instructions for future development.
+
 ## 1.2.0
 
 Releases the media preparation from 1.2.0-beta.1 together with:
