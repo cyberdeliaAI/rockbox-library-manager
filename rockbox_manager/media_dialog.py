@@ -111,6 +111,18 @@ class MediaDialog:
         self.tree.bind("<<TreeviewSelect>>", lambda _: self.update_buttons())
         self.cancel_btn.state(["disabled"])
         self.update_buttons()
+        # Font metrics at high DPI can leave almost no space for results in
+        # the fixed initial geometry. Reserve several rows after layout.
+        self.win.update_idletasks()
+        minimum_results = max(120, 4 * app.F.small.metrics("linespace"))
+        chrome_height = self.win.winfo_height() - self.tree.winfo_height()
+        screen_height = max(1, self.win.winfo_screenheight() - 80)
+        screen_width = max(1, self.win.winfo_screenwidth() - 80)
+        minimum_height = min(screen_height, max(650, chrome_height + minimum_results))
+        width = min(screen_width, max(1060, self.win.winfo_reqwidth()))
+        height = min(screen_height, max(730, minimum_height))
+        self.win.minsize(min(900, width), minimum_height)
+        self.win.geometry(f"{width}x{height}")
 
     def close(self):
         if self.running:

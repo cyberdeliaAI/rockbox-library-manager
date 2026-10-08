@@ -10,6 +10,8 @@
 - Keep the previous library index and indexed root after directory read errors
   or cancellation. Publish successful scans in one SQLite transaction; report
   incomplete scans instead of showing them as complete.
+- Keep scan markers unique when the system clock does not advance between
+  scans, so deleted folders are still removed from the index on Windows.
 - Tie indexed operations and pending artwork to the scanned music root. Refuse
   stale-root saves, serialize manual saves with other operations, and avoid
   applying late save results to a different library index.
@@ -21,6 +23,8 @@
 - Redact API keys and tokens from artwork-provider error messages.
 - Restore four media regression tests that were outside their test class, and
   add regression coverage for the corrected folder, scan, artwork and UI paths.
+- Reserve space for media results at high display scaling, including 200% on
+  Linux, while keeping the dialog within the screen size.
 - Add the approved AGENTS.md repository instructions for future development.
 
 ## 1.2.0
