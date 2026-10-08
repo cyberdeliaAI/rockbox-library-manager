@@ -208,7 +208,9 @@ class MediaDialogTests(unittest.TestCase):
             self.root.update()
             self.assertLessEqual(self.dialog.win.winfo_height(), 688)
             self.assertLessEqual(self.dialog.win.winfo_width(), 1200)
-            self.assertGreater(self.dialog.tree.winfo_height(), 60)
+            self.assertGreater(self.dialog.tree.winfo_height(), 60,
+                               f"window={self.dialog.win.winfo_geometry()}, "
+                               f"font={self.app.F.small.actual()}, details={self.dialog.details.winfo_height()}")
             for button in [*self.dialog.controls, self.dialog.apply_btn, self.dialog.find_btn,
                            self.dialog.cancel_btn, self.dialog.close_btn]:
                 self.assertTrue(button.winfo_ismapped())
