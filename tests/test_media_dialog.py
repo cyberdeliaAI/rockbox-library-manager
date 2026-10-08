@@ -4,6 +4,7 @@ import time
 import traceback
 import unittest
 from pathlib import Path
+from tkinter import font as tkfont
 from unittest.mock import patch
 
 from PIL import Image
@@ -185,5 +186,35 @@ class MediaDialogTests(unittest.TestCase):
                     y = button.winfo_rooty() - self.dialog.win.winfo_rooty()
                     self.assertLessEqual(x + button.winfo_width(), self.dialog.win.winfo_width())
                     self.assertLessEqual(y + button.winfo_height(), self.dialog.win.winfo_height())
-                self.assertGreater(self.dialog.tree.winfo_height(), 60)
+                self.assertGreater(self.dialog.tree.winfo_height(), 60,
+                                   f"window={self.dialog.win.winfo_geometry()}, "
+                                   f"screen={self.dialog.win.winfo_screenwidth()}x{self.dialog.win.winfo_screenheight()}, "
+                                   f"details={self.dialog.details.winfo_height()}")
                 self.dialog.close()
+
+    def test_small_screen_keeps_results_and_actions_visible_at_high_dpi(self):
+        self.dialog.close()
+        default = tkfont.nametofont("TkDefaultFont", root=self.root)
+        old_size = default.cget("size")
+        try:
+            # Point-sized fonts reproduce Windows/Linux DPI behavior on macOS.
+            default.configure(size=10)
+            self.root.tk.call("tk", "scaling", (96 / 72) * 2)
+            self.app.F = gui.make_fonts(self.root)
+            gui.apply_style(self.root, self.app.F)
+            with patch.object(gui.tk.Toplevel, "winfo_screenheight", return_value=768), \
+                    patch.object(gui.tk.Toplevel, "winfo_screenwidth", return_value=1280):
+                self.dialog = MediaDialog(self.app, self.music, self.base / "Config", gui.C, lambda _: None)
+            self.root.update()
+            self.assertLessEqual(self.dialog.win.winfo_height(), 688)
+            self.assertLessEqual(self.dialog.win.winfo_width(), 1200)
+            self.assertGreater(self.dialog.tree.winfo_height(), 60)
+            for button in [*self.dialog.controls, self.dialog.apply_btn, self.dialog.find_btn,
+                           self.dialog.cancel_btn, self.dialog.close_btn]:
+                self.assertTrue(button.winfo_ismapped())
+                self.assertLessEqual(button.winfo_rootx() - self.dialog.win.winfo_rootx() + button.winfo_width(),
+                                     self.dialog.win.winfo_width())
+                self.assertLessEqual(button.winfo_rooty() - self.dialog.win.winfo_rooty() + button.winfo_height(),
+                                     self.dialog.win.winfo_height())
+        finally:
+            default.configure(size=old_size)
