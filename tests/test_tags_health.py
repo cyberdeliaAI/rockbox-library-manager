@@ -92,6 +92,14 @@ class HealthTests(unittest.TestCase):
         self.album("Clean", "Album", {}, {}, {})
         self.assertEqual(self.scan(), {})
 
+    def test_separator_only_genres_are_reported_without_aborting_health(self):
+        for genre in (";", " ; ; ", ";Pop;Rock"):
+            self.album("Artist", f"Genre {len(genre)}", {"genre": genre})
+        issues = self.scan()
+        self.assertEqual(sum(kind == "combined_genre" for kind, _album in issues), 3)
+        self.assertIn("clear the empty genre tag", issues[("combined_genre", "Genre 1")]["details"])
+        self.assertIn("e.g. “Pop”", issues[("combined_genre", "Genre 9")]["details"])
+
     def test_database_blockers_genres_and_missing_information(self):
         self.album("Band", "Several", {"genre": ["Pop", "Rock"]}, {}, {})
         self.album("Band", "Odd Year", {"date": "c. 1999"}, {"date": "c. 1999"}, {"date": "c. 1999"})

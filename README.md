@@ -41,6 +41,12 @@ review before saving, and Library Health finds the tag problems that stop the
 Rockbox database update or split Rockbox's genre list. See the
 [media preparation guide](docs/media-preparation.md) and [CHANGELOG](CHANGELOG.md).
 
+**Version 1.2.1** fixes duplicate-folder conflicts, interrupted-merge reporting,
+incomplete scans, artwork saves after a music-folder change, separator-only
+genre checks, selected-artwork caching, and online fallback after rejected
+embedded covers. Provider errors redact credentials, and additional regression
+tests cover these paths. See [CHANGELOG](CHANGELOG.md).
+
 ## Screenshots
 
 Screenshots from version 1.1.0-beta.1 on Windows.

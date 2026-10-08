@@ -33,29 +33,23 @@ def image_file_signature(path: Path) -> tuple[int, int]:
 
 def contains_audio_immediate(folder: Path) -> bool:
     """Fast check: inspect directory entries only, never parse tags."""
-    try:
-        with os.scandir(folder) as it:
-            for entry in it:
-                if entry.is_file(follow_symlinks=False):
-                    if Path(entry.name).suffix.casefold() in engine.AUDIO_EXTS:
-                        return True
-    except OSError:
-        return False
+    with os.scandir(folder) as it:
+        for entry in it:
+            if entry.is_file(follow_symlinks=False):
+                if Path(entry.name).suffix.casefold() in engine.AUDIO_EXTS:
+                    return True
     return False
 
 
 def immediate_subdirs(folder: Path) -> list[Path]:
     out: list[Path] = []
-    try:
-        with os.scandir(folder) as it:
-            for entry in it:
-                if not entry.is_dir(follow_symlinks=False):
-                    continue
-                if entry.name.casefold() in EXCLUDED_DIRS or entry.name.startswith("."):
-                    continue
-                out.append(Path(entry.path))
-    except OSError:
-        pass
+    with os.scandir(folder) as it:
+        for entry in it:
+            if not entry.is_dir(follow_symlinks=False):
+                continue
+            if entry.name.casefold() in EXCLUDED_DIRS or entry.name.startswith("."):
+                continue
+            out.append(Path(entry.path))
     out.sort(key=lambda p: p.name.casefold())
     return out
 
@@ -262,28 +256,49 @@ class LibraryDB:
                     artwork_name: str, artwork_exists: bool, artwork_mtime_ns: int,
                     artwork_size: int, scan_id: int) -> None:
         with self.lock, self.conn:
-            self.conn.execute(
-                """
-                INSERT INTO items(
-                    kind, artist, album, relative_path, artwork_name,
-                    artwork_exists, artwork_mtime_ns, artwork_size, last_seen_scan
-                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(kind, relative_path) DO UPDATE SET
-                    artist=excluded.artist,
-                    album=excluded.album,
-                    artwork_name=excluded.artwork_name,
-                    artwork_exists=excluded.artwork_exists,
-                    artwork_mtime_ns=excluded.artwork_mtime_ns,
-                    artwork_size=excluded.artwork_size,
-                    last_seen_scan=excluded.last_seen_scan,
-                    problem=CASE
-                        WHEN excluded.artwork_exists=1 THEN ''
-                        ELSE items.problem
-                    END
-                """,
-                (kind, artist, album, relative_path, artwork_name,
-                 1 if artwork_exists else 0, artwork_mtime_ns, artwork_size, scan_id),
-            )
+            self._upsert_item(kind=kind, artist=artist, album=album, relative_path=relative_path,
+                              artwork_name=artwork_name, artwork_exists=artwork_exists,
+                              artwork_mtime_ns=artwork_mtime_ns, artwork_size=artwork_size, scan_id=scan_id)
+
+    def _upsert_item(self, *, kind: str, artist: str, album: str, relative_path: str,
+                    artwork_name: str, artwork_exists: bool, artwork_mtime_ns: int,
+                    artwork_size: int, scan_id: int) -> None:
+        """Execute inside the caller's database lock and transaction."""
+        self.conn.execute(
+            """
+            INSERT INTO items(
+                kind, artist, album, relative_path, artwork_name,
+                artwork_exists, artwork_mtime_ns, artwork_size, last_seen_scan
+            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(kind, relative_path) DO UPDATE SET
+                artist=excluded.artist,
+                album=excluded.album,
+                artwork_name=excluded.artwork_name,
+                artwork_exists=excluded.artwork_exists,
+                artwork_mtime_ns=excluded.artwork_mtime_ns,
+                artwork_size=excluded.artwork_size,
+                last_seen_scan=excluded.last_seen_scan,
+                problem=CASE
+                    WHEN excluded.artwork_exists=1 THEN ''
+                    ELSE items.problem
+                END
+            """,
+            (kind, artist, album, relative_path, artwork_name,
+             1 if artwork_exists else 0, artwork_mtime_ns, artwork_size, scan_id),
+        )
+
+    def commit_scan(self, items: list[dict[str, Any]], scan_id: int, root: Path, output_name: str) -> None:
+        """Publish a fully read scan atomically; failures leave the old index/root intact."""
+        with self.lock, self.conn:
+            for item in items:
+                self._upsert_item(**item, scan_id=scan_id)
+            self.conn.execute("DELETE FROM items WHERE last_seen_scan <> ?", (scan_id,))
+            stamp = str(int(time.time()))
+            for key, value in (("music_root", str(root)), ("output_name", output_name),
+                               ("scan_started", stamp), ("last_scan", stamp)):
+                self.conn.execute("INSERT INTO meta(key, value) VALUES(?, ?) "
+                                  "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
+        self.invalidate_view_cache()
 
     def finish_scan(self, scan_id: int) -> None:
         with self.lock, self.conn:
@@ -708,18 +723,17 @@ class FastLibraryScanner:
     def scan(self) -> dict[str, int]:
         scan_id = time.time_ns()
         artists = albums = missing = errors = 0
-
-        self.db.set_meta("music_root", str(self.root))
-        self.db.set_meta("output_name", self.output_name)
-        self.db.set_meta("scan_started", str(int(time.time())))
-
-        artist_dirs = immediate_subdirs(self.root)
+        items: list[dict[str, Any]] = []
+        try:
+            artist_dirs = immediate_subdirs(self.root)
+        except OSError:
+            return {"artists": 0, "albums": 0, "missing": 0, "errors": 1,
+                    "cancelled": int(self.cancel.is_set()), "incomplete": 1}
         total_dirs = len(artist_dirs)
 
         for index, artist_dir in enumerate(artist_dirs, start=1):
             if self.cancel.is_set():
                 # Leave the previous index intact; unseen rows are only pruned on a full scan.
-                self.db.invalidate_view_cache()
                 return {"artists": artists, "albums": albums, "missing": missing,
                         "errors": errors, "cancelled": 1}
             self.progress(index, total_dirs, artist_dir.name)
@@ -732,25 +746,27 @@ class FastLibraryScanner:
 
                 rel_artist = artist_dir.relative_to(self.root).as_posix()
                 exists, art_name, mtime_ns, art_size = detect_artwork(artist_dir, self.output_name)
-                self.db.upsert_item(kind="artist", artist=artist_dir.name, album="",
+                items.append(dict(kind="artist", artist=artist_dir.name, album="",
                                     relative_path=rel_artist, artwork_name=art_name,
                                     artwork_exists=exists, artwork_mtime_ns=mtime_ns,
-                                    artwork_size=art_size, scan_id=scan_id)
+                                    artwork_size=art_size))
                 artists += 1
                 missing += 0 if exists else 1
 
                 for album_dir in usable_albums:
                     rel_album = album_dir.relative_to(self.root).as_posix()
                     exists, art_name, mtime_ns, art_size = detect_artwork(album_dir, self.output_name)
-                    self.db.upsert_item(kind="album", artist=artist_dir.name, album=album_dir.name,
+                    items.append(dict(kind="album", artist=artist_dir.name, album=album_dir.name,
                                         relative_path=rel_album, artwork_name=art_name,
                                         artwork_exists=exists, artwork_mtime_ns=mtime_ns,
-                                        artwork_size=art_size, scan_id=scan_id)
+                                        artwork_size=art_size))
                     albums += 1
                     missing += 0 if exists else 1
             except Exception:
                 errors += 1
 
-        self.db.finish_scan(scan_id)
-        self.db.set_meta("last_scan", str(int(time.time())))
+        if self.cancel.is_set() or errors:
+            return {"artists": artists, "albums": albums, "missing": missing, "errors": errors,
+                    "cancelled": int(self.cancel.is_set()), "incomplete": 1}
+        self.db.commit_scan(items, scan_id, self.root, self.output_name)
         return {"artists": artists, "albums": albums, "missing": missing, "errors": errors, "cancelled": 0}

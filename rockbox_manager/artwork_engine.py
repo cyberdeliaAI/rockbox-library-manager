@@ -60,6 +60,19 @@ THEAUDIODB_API = "https://www.theaudiodb.com/api/v1/json"
 THEAUDIODB_PUBLIC_KEY = "123"
 MAX_IMAGE_BYTES = 25 * 1024 * 1024
 
+
+def safe_error_text(error: Exception, creds: Optional["Credentials"] = None) -> str:
+    """Keep provider diagnostics without exposing credentials from request URLs."""
+    message = str(error)
+    message = re.sub(r"(?i)([?&](?:api_key|api_secret|access_token|token|key)=)[^&#\s]+",
+                     r"\1[redacted]", message)
+    if creds is not None:
+        for secret in creds.keys().values():
+            if secret:
+                for value in {secret, quote(secret, safe=""), quote_plus(secret)}:
+                    message = message.replace(value, "[redacted]")
+    return message
+
 PLACEHOLDER_MARKERS = {
     "2a96cbd8b46e442fc41c2b86b821562f", "c6f59c1e5e7240a4c0d427abd71f3dbb",
     "default_artist", "default_album", "default_cover", "placeholder", "noimage", "no_image",
@@ -552,7 +565,7 @@ def lookup_lastfm_artist_candidates(name: str, creds: Credentials, session: requ
         out.extend(lookup_lastfm_artist_web_candidates(artist_name, session, limiter, mbid))
     except Exception as exc:
         # Do not let a Last.fm page-layout/network issue discard API candidates.
-        print(f"  candidate: last.fm web scrape error: {exc}")
+        print(f"  candidate: last.fm web scrape error: {safe_error_text(exc, creds)}")
     return unique_candidates(out)
 
 
@@ -841,7 +854,7 @@ def select_best(candidates: list[ImageCandidate], args: argparse.Namespace, sess
             print(f"    candidate score: {reason}")
             validated.append((score, c, img, reason))
         except Exception as exc:
-            note=f"{c.source} failed/rejected: {exc}"
+            note=f"{c.source} failed/rejected: {safe_error_text(exc)}"
             notes.append(note)
             print(f"  {note}; trying next source")
     if not validated:
@@ -849,21 +862,26 @@ def select_best(candidates: list[ImageCandidate], args: argparse.Namespace, sess
     validated.sort(key=lambda x: x[0], reverse=True)
     return validated[0], notes
 
-def try_candidates(candidates: list[ImageCandidate], output_path: Path, args: argparse.Namespace, session: requests.Session, limiter: RateLimiter) -> tuple[bool,str,str]:
+def _save_best_candidate(candidates: list[ImageCandidate], output_path: Path, args: argparse.Namespace, session: requests.Session, limiter: RateLimiter) -> tuple[Optional[ImageCandidate],str]:
     best, notes = select_best(candidates, args, session, limiter)
     if best is None:
-        return False,"","; ".join(notes) or "No artwork found"
+        return None,"; ".join(notes) or "No artwork found"
     score, c, img, reason = best
     try:
         save_square_jpeg(img, output_path, args.max_size)
         print(f"  selected: {c.source} ({reason})")
         print(f"  saved: {output_path} ({c.source})")
-        return True,c.source,""
+        return c,""
     except Exception as exc:
-        note=f"{c.source} failed/rejected while saving: {exc}"
+        note=f"{c.source} failed/rejected while saving: {safe_error_text(exc)}"
         notes.append(note)
         print(f"  {note}")
-        return False,"","; ".join(notes) or "No artwork found"
+        return None,"; ".join(notes) or "No artwork found"
+
+def try_candidates(candidates: list[ImageCandidate], output_path: Path, args: argparse.Namespace, session: requests.Session, limiter: RateLimiter) -> tuple[bool,str,str]:
+    """Preserve the existing source-name result for callers outside the fetch pipeline."""
+    candidate, notes = _save_best_candidate(candidates, output_path, args, session, limiter)
+    return candidate is not None, candidate.source if candidate is not None else "", notes
 
 def cap_provider_candidates(label: str, candidates: list[ImageCandidate], args: argparse.Namespace, kind: str = "artist") -> list[ImageCandidate]:
     """Sort and cap candidate images retained from one provider.
@@ -906,7 +924,7 @@ def artist_candidates(name: str, creds: Credentials, args: argparse.Namespace, s
                 if cs[-1].mbid:
                     mbid=cs[-1].mbid
         except Exception as exc:
-            print(f"  candidate: {label} error: {exc}")
+            print(f"  candidate: {label} error: {safe_error_text(exc, creds)}")
     out = unique_candidates(out)
     print(f"  candidate pool: {len(out)} unique artist image(s) to download/compare")
     return out
@@ -927,7 +945,7 @@ def album_candidates(artist: str, album: str, creds: Credentials, args: argparse
             found=[found] if isinstance(found, ImageCandidate) else list(found or [])
             for c in cap_provider_candidates(label, found, args, "album"):
                 out.append(c); print(f"  candidate: {c.source} -> {c.artist} / {c.album}")
-        except Exception as exc: print(f"  candidate: {label} error: {exc}")
+        except Exception as exc: print(f"  candidate: {label} error: {safe_error_text(exc, creds)}")
         if out and out[-1].mbid: mbid=out[-1].mbid
     return out
 
@@ -977,20 +995,18 @@ def process_artist_folder(folder: Path, args: argparse.Namespace, creds: Credent
         print(f"  cache: {entry.get('reason') or 'cached as not found'}"); return False,"not-found-cache"
     else:
         candidates=artist_candidates(name, creds, args, session, limiter, entry.get("mbid") or "")
-    ok,source,notes=try_candidates(candidates, output, args, session, limiter)
-    if ok:
-        c=next((x for x in candidates if x.source==source), candidates[0])
+    c,notes=_save_best_candidate(candidates, output, args, session, limiter)
+    if c is not None:
         cache["artists"][key]={"status":"found","source":c.source,"artist_name":c.artist,"image_url":c.image_url,"mbid":c.mbid}
-        return True,source
+        return True,c.source
     if args.interactive:
         override=prompt_artist(name, notes or "No source returned artwork")
         if override:
             candidates=artist_candidates(override, creds, args, session, limiter)
-            ok,source,notes=try_candidates(candidates, output, args, session, limiter)
-            if ok:
-                c=next((x for x in candidates if x.source==source), candidates[0])
+            c,notes=_save_best_candidate(candidates, output, args, session, limiter)
+            if c is not None:
                 cache["artists"][cache_key(override)]={"status":"found","source":c.source,"artist_name":c.artist,"image_url":c.image_url,"mbid":c.mbid}
-                return True,source
+                return True,c.source
     cache["artists"][key]={"status":"not_found","artist_name":name,"reason":notes or "No artwork found"}
     print(f"  artwork: {notes or 'No artwork found'}")
     return False,"not-found"
@@ -1008,32 +1024,36 @@ def process_album_folder(folder: Path, args: argparse.Namespace, creds: Credenti
         artist,album=override
     else: print(f"  folder check: OK, {reason}")
     if args.dry_run: print(f"  dry-run: would try embedded artwork first, then online lookup for '{artist} / {album}'"); return False,"dry-run"
-    candidates=[]; embedded=find_embedded_album_art(folder,args.max_files_per_album)
-    if embedded: embedded.artist=artist; embedded.album=album; candidates.append(embedded); print("  candidate: embedded artwork found in audio file")
+    embedded_notes=""
+    embedded=find_embedded_album_art(folder,args.max_files_per_album)
+    if embedded:
+        embedded.artist=artist; embedded.album=album
+        print("  candidate: embedded artwork found in audio file")
+        c,embedded_notes=_save_best_candidate([embedded], output, args, session, limiter)
+        if c is not None:
+            return True,c.source
+        print("  candidate: embedded artwork rejected; trying online sources")
     else: print("  candidate: no embedded artwork found in checked audio files")
     key=cache_key(artist,album); entry=cache.get("albums",{}).get(key,{})
-    if not candidates:
-        if entry.get("status")=="found" and entry.get("image_url") and not args.ignore_cache:
-            candidates=[ImageCandidate(entry.get("source") or "cache", entry.get("artist_name") or artist, entry.get("album_name") or album, image_url=entry.get("image_url") or "", mbid=entry.get("mbid") or "")]
-        elif entry.get("status")=="not_found" and not args.retry_not_found and not args.ignore_cache:
-            print(f"  cache: {entry.get('reason') or 'cached as not found'}"); return False,"not-found-cache"
-        else:
-            candidates=album_candidates(artist, album, creds, args, session, limiter, entry.get("mbid") or "")
-    ok,source,notes=try_candidates(candidates, output, args, session, limiter)
-    if ok:
-        if source != "embedded":
-            c=next((x for x in candidates if x.source==source), candidates[0])
-            cache["albums"][key]={"status":"found","source":c.source,"artist_name":c.artist,"album_name":c.album,"image_url":c.image_url,"mbid":c.mbid}
-        return True,source
+    if entry.get("status")=="found" and entry.get("image_url") and not args.ignore_cache:
+        candidates=[ImageCandidate(entry.get("source") or "cache", entry.get("artist_name") or artist, entry.get("album_name") or album, image_url=entry.get("image_url") or "", mbid=entry.get("mbid") or "")]
+    elif entry.get("status")=="not_found" and not args.retry_not_found and not args.ignore_cache:
+        print(f"  cache: {entry.get('reason') or 'cached as not found'}"); return False,"not-found-cache"
+    else:
+        candidates=album_candidates(artist, album, creds, args, session, limiter, entry.get("mbid") or "")
+    c,notes=_save_best_candidate(candidates, output, args, session, limiter)
+    if c is not None:
+        cache["albums"][key]={"status":"found","source":c.source,"artist_name":c.artist,"album_name":c.album,"image_url":c.image_url,"mbid":c.mbid}
+        return True,c.source
+    notes="; ".join(n for n in (embedded_notes,notes) if n)
     if args.interactive:
         override=prompt_album(artist, album, notes or "No source returned artwork")
         if override:
             oa,ob=override; candidates=album_candidates(oa,ob,creds,args,session,limiter)
-            ok,source,notes=try_candidates(candidates, output, args, session, limiter)
-            if ok:
-                c=next((x for x in candidates if x.source==source), candidates[0])
+            c,notes=_save_best_candidate(candidates, output, args, session, limiter)
+            if c is not None:
                 cache["albums"][cache_key(oa,ob)]={"status":"found","source":c.source,"artist_name":c.artist,"album_name":c.album,"image_url":c.image_url,"mbid":c.mbid}
-                return True,source
+                return True,c.source
     cache["albums"][key]={"status":"not_found","artist_name":artist,"album_name":album,"reason":notes or "No artwork found"}
     print(f"  artwork: {notes or 'No artwork found'}")
     return False,"not-found"

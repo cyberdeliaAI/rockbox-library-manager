@@ -253,9 +253,6 @@ class MediaTests(unittest.TestCase):
         self.assertIn("Multichannel", result.errors[0])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
     def test_progressive_artwork_at_the_right_size_is_rewritten_as_baseline(self):
         path = self.root / "Artist/Album/folder.jpg"
         path.parent.mkdir(parents=True)
@@ -315,3 +312,7 @@ if __name__ == "__main__":
         self.assertIn("too small", result.errors[0])
         self.assertEqual(path.read_bytes(), before)
         self.assertFalse(list(path.parent.glob(".rlm-*")))
+
+
+if __name__ == "__main__":
+    unittest.main()
