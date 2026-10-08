@@ -215,6 +215,42 @@ class DuplicateDialogTests(unittest.TestCase):
         self.assertTrue(all(not b.instate(['disabled']) for b in buttons.values()))
         buttons['Cancel'].invoke()
 
+    def test_partial_disk_merge_is_reported_and_completed_moves_are_recorded(self):
+        from rockbox_manager import folders
+
+        extra = self.music / ALIASES[0] / 'Album C'
+        extra.mkdir()
+        (extra / '01.flac').write_bytes(FIXTURE.read_bytes())
+        win, buttons = self.open_dialog()
+        real = folders.shutil.move
+        completed = []
+        def move(src, dst):
+            if completed:
+                raise OSError('simulated write failure')
+            result = real(src, dst)
+            completed.append([src, dst])
+            return result
+        with patch.object(folders.shutil, 'move', side_effect=move), \
+                patch.object(gui.messagebox, 'askyesno', return_value=True), \
+                patch.object(gui.messagebox, 'showerror') as error:
+            buttons['Fix folders on disk'].invoke()
+            deadline = time.monotonic() + 10
+            while not error.called and time.monotonic() < deadline:
+                self.root.update()
+                time.sleep(0.01)
+            self.assertTrue(error.called)
+        texts = [w.cget('text') for w in descendants(win) if isinstance(w, gui.tk.Label)]
+        self.assertTrue(any('some files may have changed' in t for t in texts), texts)
+        self.assertNotIn('No files were changed.', texts)
+        import json
+        self.assertEqual(json.loads(self.app.db.get_meta('rockbox_folder_moves')), completed)
+        self.assertEqual(len(list(self.music.rglob('*.flac'))), 3)
+        deadline = time.monotonic() + 10
+        while self.app.operation_lock.locked() and time.monotonic() < deadline:
+            self.root.update()
+            time.sleep(0.01)
+        buttons['Cancel'].invoke()
+
 
 if __name__ == '__main__':
     unittest.main()

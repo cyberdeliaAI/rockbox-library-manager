@@ -389,6 +389,7 @@ class ArtworkApp:
         self.pending_label = ""
         self.pending_anchor = 0.5
         self.pending_item_id: Optional[int] = None
+        self.pending_music_root: Optional[Path] = None
         self.current_preview: Optional[Image.Image] = None
         self.detail_photo: Optional[ImageTk.PhotoImage] = None
         self.detail_photo2: Optional[ImageTk.PhotoImage] = None
@@ -1153,7 +1154,7 @@ class ArtworkApp:
             self.health_merge_btn.state(["!disabled"])
 
     def analyze_library_health(self) -> None:
-        root = self._valid_music_root()
+        root = self._indexed_music_root()
         if not root:
             return
         if not self.operation_lock.acquire(blocking=False):
@@ -1287,8 +1288,17 @@ class ArtworkApp:
             self.toast.show("These artist folders will stay separate in the library.", "ok")
 
         def finish_disk_merge(result: dict[str, Any], canonical: str) -> None:
+            moves = result.get("folder_moves") or []
+            if moves:
+                recorded = json.loads(self.db.get_meta("rockbox_folder_moves", "[]"))
+                recorded.extend(moves)
+                self.db.set_meta("rockbox_folder_moves", json.dumps(recorded))
+            if result.get("changes_started"):
+                self.db.set_meta("health_dirty", "1")
             try:
                 if not win.winfo_exists():
+                    if result.get("changes_started"):
+                        self.scan_library()
                     return
             except tk.TclError:
                 return
@@ -1301,13 +1311,16 @@ class ArtworkApp:
                     detail += "\n\nConflicts:\n" + "\n".join(f"- {x}" for x in conflicts[:12])
                     if len(conflicts) > 12:
                         detail += f"\n- ... and {len(conflicts) - 12} more"
-                state_label.configure(text="No files were changed.", fg=C["bad"])
+                changed = result.get("changes_started", True)
+                text = ("The merge stopped; some files may have changed. Rescan and inspect the folders."
+                        if changed else "No files were changed.")
+                state_label.configure(text=text, fg=C["bad"])
+                if changed:
+                    self.log_app(f"Artist folder merge stopped after {result.get('moved_entries', 0)} moves: {detail}")
+                    self.scan_library()
                 messagebox.showerror(APP_NAME, detail, parent=win)
                 return
 
-            recorded = json.loads(self.db.get_meta("rockbox_folder_moves", "[]"))
-            recorded.extend(result.get("folder_moves") or [])
-            self.db.set_meta("rockbox_folder_moves", json.dumps(recorded))
             self.db.set_artist_auto_merge(aliases, True)
             self.db.set_artist_aliases(aliases, canonical)
             self.db.delete_health_issue(int(issue["id"]))
@@ -1342,7 +1355,7 @@ class ArtworkApp:
                 pass
 
         def fix_on_disk() -> None:
-            root = self._valid_music_root(silent=True)
+            root = self._indexed_music_root()
             canonical = var.get().strip()
             if not root or not canonical:
                 return
@@ -2141,7 +2154,7 @@ class ArtworkApp:
         return path.resolve()
 
     def item_folder(self, item: LibraryItem) -> Optional[Path]:
-        root = self._valid_music_root(silent=True)
+        root = self._indexed_music_root(silent=True)
         return root / Path(item.relative_path) if root else None
 
     def physical_items_for(self, item: LibraryItem, *, missing_only: bool = False) -> list[LibraryItem]:
@@ -2152,11 +2165,21 @@ class ArtworkApp:
         return [item]
 
     def artwork_path(self, item: LibraryItem) -> Optional[Path]:
-        root = self._valid_music_root(silent=True)
+        root = self._indexed_music_root(silent=True)
         if not root:
             return None
         rel = item.artwork_relative_path or item.relative_path
         return root / Path(rel) / (item.artwork_name or self.output_name or "folder.jpg")
+
+    def _indexed_music_root(self, *, silent: bool = False) -> Optional[Path]:
+        """Only combine indexed relative paths with the root that produced them."""
+        root = self._valid_music_root(silent=silent)
+        indexed = self.db.get_meta("music_root", "")
+        if root and indexed and Path(indexed).expanduser().resolve() == root:
+            return root
+        if root and not silent:
+            self.toast.show("Rescan this music folder before using indexed items.", "warn")
+        return None
 
     # ------------------------------------------------------------------
     # Scan / database
@@ -2485,9 +2508,13 @@ class ArtworkApp:
         item = self._detail_item
         if item is None:
             return
+        root = self._indexed_music_root()
+        if root is None:
+            return
         self.pending_image = img
         self.pending_label = label
         self.pending_item_id = item_id
+        self.pending_music_root = root
         self.pending_anchor = 0.5
         w, h = img.size
         size = self.output_size()
@@ -2530,6 +2557,7 @@ class ArtworkApp:
     def clear_pending(self, redraw: bool = True) -> None:
         self.pending_image = None
         self.pending_item_id = None
+        self.pending_music_root = None
         self.pending_label = ""
         self.pending_box.pack_forget()
         self.pending_bar.grid_remove()
@@ -2545,8 +2573,11 @@ class ArtworkApp:
                 self.toast.show("Choose, drop or paste an image first.", "warn")
             return
         item = self.db.get_item(self.pending_item_id)
-        root = self._valid_music_root(silent=True)
+        root = self._indexed_music_root()
         if not item or not root:
+            return
+        if self.pending_music_root != root:
+            self.toast.show("Choose artwork again for the current music folder.", "warn")
             return
         targets = self.physical_items_for(item)
         if not targets:
@@ -2559,35 +2590,55 @@ class ArtworkApp:
             return
 
         img, anchor, size = self.pending_image, self.pending_anchor, self.output_size()
+        if not self.operation_lock.acquire(blocking=False):
+            self.toast.show("Another task is still running. Wait for it to finish first.", "warn")
+            return
+        output_name = self.output_name
         self.save_btn.state(["disabled"])
         if len(targets) > 1:
             self.status_var.set(f"Saving artwork to {len(targets)} artist folders...")
         else:
             self.status_var.set("Saving artwork...")
 
-        def work() -> Any:
+        def save() -> Any:
             square = anchor_crop_square(img, anchor)
             saved: list[tuple[int, str, str, tuple[int, int]]] = []
             failed: list[str] = []
             for physical in targets:
                 folder = root / Path(physical.relative_path)
-                output_name = physical.artwork_name if physical.artwork_exists else self.output_name
-                output_path = folder / output_name
+                filename = physical.artwork_name if physical.artwork_exists else output_name
+                output_path = folder / filename
                 try:
                     engine.save_square_jpeg(square, output_path, size)
-                    saved.append((physical.id, physical.relative_path, output_name,
+                    saved.append((physical.id, physical.relative_path, filename,
                                   image_file_signature(output_path)))
                 except Exception as exc:
                     failed.append(f"{physical.relative_path}: {exc}")
-            return {"saved": saved, "failed": failed}
+            return {"saved": saved, "failed": failed, "music_root": str(root)}
 
-        self.thumbs.run_device_task(
-            work,
-            lambda result: self.ui_queue.put(("saved", (item.id, result))),
-        )
+        def work() -> Any:
+            try:
+                return save()
+            finally:
+                self.operation_lock.release()
+
+        try:
+            self.thumbs.run_device_task(work, lambda result: self.ui_queue.put(("saved", (item.id, result))))
+        except Exception:
+            self.operation_lock.release()
+            self.save_btn.state(["!disabled"])
+            raise
 
     def _on_saved(self, virtual_item_id: int, result: Any) -> None:
         self.save_btn.state(["!disabled"])
+        if isinstance(result, dict) and result.get("music_root"):
+            indexed = self.db.get_meta("music_root", "")
+            if not indexed or Path(result["music_root"]).resolve() != Path(indexed).resolve():
+                self.log_app(f"Artwork save finished for the previous music folder: {result['music_root']}")
+                for failure in result.get("failed", []):
+                    self.log_app("Artwork save failed: " + failure)
+                self.toast.show("Artwork save finished for the previous folder. The current index was kept.", "info")
+                return
         old_item = self.db.get_item(virtual_item_id)
         if isinstance(result, Exception) or old_item is None:
             messagebox.showerror(APP_NAME, f"Could not save artwork:\n{result}")
@@ -2649,7 +2700,7 @@ class ArtworkApp:
         return args
 
     def fetch_missing(self) -> None:
-        root = self._valid_music_root()
+        root = self._indexed_music_root()
         if not root:
             return
         search = self.search_var.get().strip()
@@ -2667,7 +2718,7 @@ class ArtworkApp:
     def fetch_selected_item(self) -> None:
         if self._require_selection() is None:
             return
-        root = self._valid_music_root()
+        root = self._indexed_music_root()
         item = self.db.get_item(self.selected_item_id or -1)
         if not root or not item:
             return
@@ -2677,6 +2728,8 @@ class ArtworkApp:
         self._fetch_items([item], root)
 
     def _fetch_items(self, items: list[LibraryItem], root: Path) -> None:
+        if self._indexed_music_root() != root:
+            return
         if not self.operation_lock.acquire(blocking=False):
             self.toast.show("Another task is still running. Wait for it or cancel it first.", "warn")
             return
@@ -2954,7 +3007,9 @@ class ArtworkApp:
 
     def _on_scan_done(self, result: dict[str, int]) -> None:
         if result.get("cancelled"):
-            text = "Scan cancelled. Folders that weren't reached keep their previous status."
+            text = "Scan cancelled. The previous index was kept."
+        elif result.get("incomplete") or result.get("errors"):
+            text = f"Scan incomplete: {result.get('errors', 0)} error(s). The previous index was kept. Reconnect and rescan."
         else:
             # Report the same virtual/canonical counts shown in the sidebar.
             # Physical duplicate artist folders can otherwise make the scan text

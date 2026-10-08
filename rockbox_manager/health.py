@@ -273,9 +273,11 @@ class HealthScanner:
                 "Rockbox lists these tracks under <Untagged> in its Genre view.")
         combined = sorted({g for v in tracks for g in v.get("genre", []) if tags.combined_genre(g)})
         if combined:
+            parts = [part for genre in combined for part in tags.split_genre(genre)]
+            advice = (f" Keep one main genre, e.g. “{parts[0]}”." if parts else
+                      " Set a genre name or clear the empty genre tag.")
             add("combined_genre", "warn", "Combined genre text " + ", ".join(f"“{g}”" for g in combined) +
-                " is listed by Rockbox as a genre of its own. Keep one main genre, e.g. “" +
-                tags.split_genre(combined[0])[0] + "”.", genres=combined)
+                " is listed by Rockbox as a genre of its own." + advice, genres=combined)
         numbers = [track_number(first(v, "tracknumber")) for v in tracks]
         problems = []
         if any(n == 0 for n in numbers):
