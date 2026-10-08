@@ -290,6 +290,10 @@ class LibraryDB:
     def commit_scan(self, items: list[dict[str, Any]], scan_id: int, root: Path, output_name: str) -> None:
         """Publish a fully read scan atomically; failures leave the old index/root intact."""
         with self.lock, self.conn:
+            # Windows wall-clock resolution can give consecutive scans the
+            # same timestamp. Never reuse a marker already present in the index.
+            previous = self.conn.execute("SELECT COALESCE(MAX(last_seen_scan), 0) FROM items").fetchone()[0]
+            scan_id = max(scan_id, int(previous) + 1)
             for item in items:
                 self._upsert_item(**item, scan_id=scan_id)
             self.conn.execute("DELETE FROM items WHERE last_seen_scan <> ?", (scan_id,))

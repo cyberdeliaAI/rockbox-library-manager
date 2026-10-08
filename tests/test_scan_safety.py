@@ -95,6 +95,14 @@ class ScanSafetyTests(unittest.TestCase):
             self.scan(other.parent.parent)
         self.assertEqual(self.snapshot(), before)
 
+    def test_successful_scans_prune_when_the_clock_does_not_advance(self):
+        with patch.object(library.time, "time_ns", return_value=123):
+            self.scan()
+            shutil.rmtree(self.album.parent)
+            result = self.scan()
+        self.assertEqual(result["errors"], 0)
+        self.assertEqual(self.db.physical_items(), [])
+
 
 if __name__ == "__main__":
     unittest.main()
