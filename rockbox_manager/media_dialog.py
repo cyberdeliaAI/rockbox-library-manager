@@ -33,14 +33,16 @@ class MediaDialog:
         frame.pack(fill="both", expand=True)
         tk.Label(frame, text="Prepare media for PodBox", font=app.F.title,
                  bg=colors["panel"], fg=colors["text"], anchor="w").pack(fill="x")
-        tk.Label(frame, text=f"FLAC: 16-bit, up to 44.1 kHz. Artwork: {self.size}×{self.size} px (Settings).\n"
+        description = tk.Label(frame, text=f"FLAC: 16-bit, up to 44.1 kHz. Artwork: {self.size}×{self.size} px (Settings).\n"
                  "Preview a folder or the whole library, then select files to change. Small artwork is replaced only by a larger online source.",
                  font=app.F.small, bg=colors["panel"], fg=colors["muted"],
-                 anchor="w", justify="left", wraplength=840).pack(fill="x", pady=(5, 10))
+                 anchor="w", justify="left", wraplength=840)
+        description.pack(fill="x", pady=(5, 10))
         backup_text = f"Local backups: {self.backup_root}" if self.backups else "Local backups OFF — selected originals will be replaced."
-        tk.Label(frame, text=backup_text, font=app.F.small, bg=colors["panel"],
+        backup_label = tk.Label(frame, text=backup_text, font=app.F.small, bg=colors["panel"],
                  fg=colors["muted"] if self.backups else colors["warn"], anchor="w",
-                 wraplength=840, justify="left").pack(fill="x", pady=(0, 8))
+                 wraplength=840, justify="left")
+        backup_label.pack(fill="x", pady=(0, 8))
         # Reserve the footer before laying out the expanding results list.
         footer = tk.Frame(frame, bg=colors["panel"])
         footer.pack(side="bottom", fill="x", pady=(12, 0))
@@ -111,6 +113,48 @@ class MediaDialog:
         self.tree.bind("<<TreeviewSelect>>", lambda _: self.update_buttons())
         self.cancel_btn.state(["disabled"])
         self.update_buttons()
+        # Font metrics at high DPI can leave almost no space for results in
+        # the fixed initial geometry. Reserve several rows after layout.
+        self.win.update_idletasks()
+        screen_width = max(1, self.win.winfo_screenwidth() - 80)
+        width = min(screen_width, max(1060, self.win.winfo_reqwidth()))
+        def wrap_info(event=None):
+            for label in (description, backup_label, self.status):
+                label.configure(wraplength=max(1, (event.width if event else width) - 36))
+        frame.bind("<Configure>", wrap_info)
+        wrap_info()
+        self.win.geometry(f"{width}x730")
+        self.win.update_idletasks()
+        minimum_results = max(120, 4 * app.F.small.metrics("linespace"))
+        chrome_height = self.win.winfo_height() - self.tree.winfo_height()
+        screen_height = max(1, self.win.winfo_screenheight() - 80)
+        overflow = chrome_height + minimum_results - screen_height
+        if overflow > 0:
+            # Keep the details scrollable on smaller screens while reserving
+            # room for results and the action buttons at the same font size.
+            line_height = max(1, app.F.small.metrics("linespace"))
+            fewer_lines = (overflow + line_height - 1) // line_height
+            self.details.configure(height=max(1, 5 - fewer_lines))
+            self.win.update_idletasks()
+            chrome_height = self.win.winfo_height() - self.tree.winfo_height()
+        if chrome_height + minimum_results > screen_height:
+            # Some Windows desktops also limit the actual window width, adding
+            # wrapped lines. Compact gaps before sacrificing result rows.
+            frame.configure(pady=6)
+            description.pack_configure(pady=(3, 6))
+            backup_label.pack_configure(pady=(0, 4))
+            scope.pack_configure(pady=(0, 4))
+            select.pack_configure(pady=4)
+            self.status.pack_configure(pady=(0, 4))
+            footer.pack_configure(pady=(6, 0))
+            self.details.configure(pady=4)
+            self.details.pack_configure(pady=(4, 0))
+            self.win.update_idletasks()
+            chrome_height = self.win.winfo_height() - self.tree.winfo_height()
+        minimum_height = min(screen_height, max(650, chrome_height + minimum_results))
+        height = min(screen_height, max(730, minimum_height))
+        self.win.minsize(min(900, width), minimum_height)
+        self.win.geometry(f"{width}x{height}")
 
     def close(self):
         if self.running:
