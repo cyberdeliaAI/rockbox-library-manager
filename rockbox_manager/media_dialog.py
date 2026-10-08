@@ -118,6 +118,15 @@ class MediaDialog:
         chrome_height = self.win.winfo_height() - self.tree.winfo_height()
         screen_height = max(1, self.win.winfo_screenheight() - 80)
         screen_width = max(1, self.win.winfo_screenwidth() - 80)
+        overflow = chrome_height + minimum_results - screen_height
+        if overflow > 0:
+            # Keep the details scrollable on smaller screens while reserving
+            # room for results and the action buttons at the same font size.
+            line_height = max(1, app.F.small.metrics("linespace"))
+            fewer_lines = (overflow + line_height - 1) // line_height
+            self.details.configure(height=max(1, 5 - fewer_lines))
+            self.win.update_idletasks()
+            chrome_height = self.win.winfo_height() - self.tree.winfo_height()
         minimum_height = min(screen_height, max(650, chrome_height + minimum_results))
         width = min(screen_width, max(1060, self.win.winfo_reqwidth()))
         height = min(screen_height, max(730, minimum_height))
