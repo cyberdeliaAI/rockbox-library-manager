@@ -137,6 +137,20 @@ class MediaDialog:
             self.details.configure(height=max(1, 5 - fewer_lines))
             self.win.update_idletasks()
             chrome_height = self.win.winfo_height() - self.tree.winfo_height()
+        if chrome_height + minimum_results > screen_height:
+            # Some Windows desktops also limit the actual window width, adding
+            # wrapped lines. Compact gaps before sacrificing result rows.
+            frame.configure(pady=6)
+            description.pack_configure(pady=(3, 6))
+            backup_label.pack_configure(pady=(0, 4))
+            scope.pack_configure(pady=(0, 4))
+            select.pack_configure(pady=4)
+            self.status.pack_configure(pady=(0, 4))
+            footer.pack_configure(pady=(6, 0))
+            self.details.configure(pady=4)
+            self.details.pack_configure(pady=(4, 0))
+            self.win.update_idletasks()
+            chrome_height = self.win.winfo_height() - self.tree.winfo_height()
         minimum_height = min(screen_height, max(650, chrome_height + minimum_results))
         height = min(screen_height, max(730, minimum_height))
         self.win.minsize(min(900, width), minimum_height)
