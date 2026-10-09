@@ -74,10 +74,10 @@ def smoke(directory, report_dir):
     gui, cli = executables(directory)
     for executable in (gui, cli):
         report = report_dir / (executable.stem + ".json")
-        subprocess.run([str(executable), "--bundle-smoke-test", str(report)], cwd=directory,
-                       check=True, timeout=90)
+        completed = subprocess.run([str(executable), "--bundle-smoke-test", str(report)], cwd=directory,
+                                   timeout=90)
         data = json.loads(report.read_text(encoding="utf-8"))
-        if not data.get("ok") or data.get("version") != __version__:
+        if completed.returncode or not data.get("ok") or data.get("version") != __version__:
             raise RuntimeError(f"Frozen application check failed: {data}")
     for arguments, expected in ((["--version"], __version__), (["--help"], "Legacy artwork"),
                                 (["artwork", "--help"], "usage:")):
