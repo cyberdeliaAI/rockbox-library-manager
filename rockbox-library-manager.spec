@@ -16,7 +16,8 @@ a = Analysis(
     [str(root / "scripts" / "frozen_entry.py")],
     pathex=[str(root)],
     datas=data,
-    hiddenimports=collect_submodules("mutagen"),
+    # ImageTk loads its Tk library finder dynamically on Linux.
+    hiddenimports=collect_submodules("mutagen") + ["PIL._tkinter_finder"],
     hookspath=[str(root / "scripts" / "hooks")],
 )
 pyz = PYZ(a.pure)
