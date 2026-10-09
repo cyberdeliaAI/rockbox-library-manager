@@ -22,6 +22,8 @@ from typing import Callable, Optional
 from mutagen.flac import FLAC, StreamInfo
 from PIL import Image, ImageOps
 
+from .frozen_runtime import external_environment
+
 
 class MediaError(Exception):
     pass
@@ -218,7 +220,8 @@ def run_ffmpeg(executable, args, cancel):
     with tempfile.TemporaryFile() as log:
         kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
         proc = subprocess.Popen([executable, "-hide_banner", "-loglevel", "error", "-nostdin", *args],
-                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=log, **kwargs)
+                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=log,
+                                env=external_environment(), **kwargs)
         try:
             while True:
                 check_cancel(cancel)
