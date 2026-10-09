@@ -1,0 +1,105 @@
+name: Native downloads
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to build and attach downloads to (empty = artifacts only)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and check · ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            target: windows-x64
+          - os: macos-14
+            target: macos-arm64
+          - os: macos-15-intel
+            target: macos-x64
+          - os: ubuntu-22.04
+            target: linux-x64
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag || '' }}
+      RLM_REQUIRE_FFMPEG: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install build dependencies
+        run: python -m pip install -r requirements-build.txt "ruff>=0.11,<1"
+      - name: Install FFmpeg and display (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg xvfb python3-tk
+      - name: Install FFmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg --yes --no-progress
+      - name: Install FFmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+      - name: Lint
+        run: python -m ruff check rockbox_manager tests scripts
+      - name: Build and verify extracted downloads (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a -s "-screen 0 1920x1200x24" python scripts/build_app.py --release-tag "$RELEASE_TAG"
+      - name: Build and verify extracted downloads
+        if: runner.os != 'Linux'
+        shell: bash
+        run: python scripts/build_app.py --release-tag "$RELEASE_TAG"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.target }}
+          path: dist/packages/*
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-reports-${{ matrix.target }}
+          path: build/reports/*.json
+          if-no-files-found: ignore
+
+  publish:
+    name: Attach verified release downloads
+    needs: build
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.tag != '')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          path: release-assets
+          merge-multiple: true
+      - name: Include the existing source ZIP format
+        run: |
+          git archive --format=zip --prefix="rockbox-library-manager-${RELEASE_TAG}/" \
+            --output="release-assets/rockbox-library-manager-${RELEASE_TAG}.zip" HEAD
+          cd release-assets
+          sha256sum "rockbox-library-manager-${RELEASE_TAG}.zip" > "rockbox-library-manager-${RELEASE_TAG}.zip.sha256"
+      - name: Attach builds and checksums to the existing release
+        run: gh release upload "$RELEASE_TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber

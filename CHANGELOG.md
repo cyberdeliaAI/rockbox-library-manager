@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.2.2
+
+- Add native PyInstaller GUI/CLI downloads for Windows x64, Linux x64, and
+  macOS Apple Silicon and Intel. Bundle Python, Tk, runtime libraries and
+  drag-and-drop support; keep source installations and external FFmpeg support.
+- Build and test extracted archives on GitHub Actions before attaching them,
+  checksums and the existing source ZIP to a release. Include project and
+  dependency license notices, and reuse the existing application icon.
+- Verify the frozen GUI, native drag and drop, SQLite, metadata, JPEG processing,
+  backups, CLI dispatch and real FFmpeg conversion against temporary data.
+- Restore the system library search path for external FFmpeg and the file manager
+  in frozen Linux builds. Source runs keep their existing environment behavior.
+
 ## 1.2.1
 
 - Check duplicate-folder destinations across all source folders before moving
