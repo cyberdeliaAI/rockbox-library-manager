@@ -1,0 +1,4 @@
+-r requirements.txt
+# Build dependencies only; source installations keep tkinterdnd2 optional.
+PyInstaller==6.22.3
+tkinterdnd2==0.6.3

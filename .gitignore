@@ -17,6 +17,7 @@ album-art-cache.json
 
 # Generated packages and operating-system files
 dist/
+build/
 *.zip
 .DS_Store
 Thumbs.db
