@@ -47,6 +47,11 @@ genre checks, selected-artwork caching, and online fallback after rejected
 embedded covers. Provider errors redact credentials, and additional regression
 tests cover these paths. See [CHANGELOG](CHANGELOG.md).
 
+**Version 1.2.2** adds standalone PyInstaller downloads for Windows, Linux and
+macOS (Apple Silicon and Intel), including drag and drop and the existing CLI.
+GitHub Actions builds and checks the extracted packages before attaching them
+to a release. See the [native build guide](docs/native-builds.md).
+
 ## Screenshots
 
 Screenshots from version 1.1.0-beta.1 on Windows.
@@ -87,8 +92,30 @@ Screenshots from version 1.1.0-beta.1 on Windows.
 
 ## Install and run
 
-Download the ZIP from [Releases](https://github.com/cyberdeliaAI/rockbox-library-manager/releases)
-and extract it, or clone this repository. Open a terminal in the extracted folder.
+### Standalone downloads (no Python installation)
+
+Download the package for your system from
+[Releases](https://github.com/cyberdeliaAI/rockbox-library-manager/releases):
+
+| System | Package ending | Start |
+|---|---|---|
+| Windows, 64-bit | `windows-x64.zip` | Extract the whole folder and open `Rockbox Library Manager.exe`. |
+| macOS, Apple Silicon | `macos-arm64.zip` | Extract and move `Rockbox Library Manager.app` to Applications. |
+| macOS, Intel | `macos-x64.zip` | Extract and move `Rockbox Library Manager.app` to Applications. |
+| Linux, x86-64 | `linux-x64.tar.gz` | Extract and run `./"Rockbox Library Manager"` inside the extracted folder. |
+
+Keep the Windows/Linux executable and its `_internal` folder together.
+Python, Tk, required libraries and drag-and-drop support are bundled.
+Existing settings and credentials keep their current locations.
+FFmpeg remains optional and separate: install it and select its executable in
+Settings for audio conversion. Scanning and artwork preparation work without it.
+See the [native build guide](docs/native-builds.md) for CLI usage, checksums,
+platform coverage and signing status.
+
+### Run from source
+
+Download `rockbox-library-manager-vVERSION.zip` from Releases and extract it,
+or clone this repository. Open a terminal in the extracted folder.
 Python 3.10 or later, including Tk, is required.
 
 ### Windows

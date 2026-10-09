@@ -14,6 +14,7 @@ from PIL import Image, ImageOps
 
 from . import __version__ as APP_VERSION
 from . import artwork_engine as engine
+from .frozen_runtime import external_environment
 
 APP_NAME = "Rockbox Library Manager"
 USER_AGENT = f"RockboxLibraryManager/{APP_VERSION}"
@@ -99,4 +100,8 @@ def open_in_file_manager(folder: Path) -> None:
     elif os.name == "nt":
         os.startfile(str(folder))  # type: ignore[attr-defined]
     else:
-        os.spawnlp(os.P_NOWAIT, "xdg-open", "xdg-open", str(folder))
+        env = external_environment()
+        if env is None:
+            os.spawnlp(os.P_NOWAIT, "xdg-open", "xdg-open", str(folder))
+        else:
+            os.spawnlpe(os.P_NOWAIT, "xdg-open", "xdg-open", str(folder), env)

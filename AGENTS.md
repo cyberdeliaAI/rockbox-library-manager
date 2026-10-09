@@ -54,6 +54,9 @@ pattern and operation-lock coordination when modifying background operations.
   and scanning must remain usable without FFmpeg.
 - Packaging uses Hatchling. The version comes from
   `rockbox_manager/__init__.py`.
+- Standalone downloads use `rockbox-library-manager.spec`, `scripts/build_app.py`
+  and `requirements-build.txt`. Keep GUI and CLI dispatch compatible with source
+  runs. Native builds bundle tkinterdnd2; source installations keep it optional.
 - Follow existing module boundaries and local code style. Ruff targets Python
   3.10, configures 120-column lines, and checks `E9` and `F`.
   Avoid unrelated reformatting of the adapted artwork engine.
@@ -108,5 +111,10 @@ Run from the repository root:
 - FFmpeg-dependent tests need FFmpeg. Native database interoperability tests
   additionally require `ROCKBOX_DATABASE_TOOL`.
 - CI covers Windows, macOS, and Linux on Python 3.10 and 3.13.
+- Native builds additionally check Windows x64, Linux x64 and both Mac
+  architectures on Python 3.13. Run `python scripts/build_app.py` with the build
+  dependencies installed to build and verify an extracted package. Preserve
+  archive symlinks, signing integrity, license notices and version/tag checks;
+  see `docs/native-builds.md` and `.github/workflows/builds.yml`.
 - Report tests actually executed, skips, and missing prerequisites. Do not
   equate lint success or mocked checks with full player compatibility.
