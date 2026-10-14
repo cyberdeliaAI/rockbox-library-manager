@@ -52,6 +52,11 @@ macOS (Apple Silicon and Intel), including drag and drop and the existing CLI.
 GitHub Actions builds and checks the extracted packages before attaching them
 to a release. See the [native build guide](docs/native-builds.md).
 
+**Version 1.3.0** adds on-demand album details, track search/filtering within an
+album, possible duplicate-track and incomplete-album health checks, and optional
+GitHub update notifications. Existing scanning, tag editing and artwork behavior
+are retained. See [album details, health and updates](docs/library-details.md).
+
 ## Screenshots
 
 Screenshots from version 1.1.0-beta.1 on Windows.
@@ -89,6 +94,14 @@ Screenshots from version 1.1.0-beta.1 on Windows.
 - Replace artwork smaller than the configured size with a larger online source,
   or open the artwork search to choose one; small images are never upscaled.
 - Use the same artwork engine from the command line.
+- Open **Album details…** on a selected album for a read-only track list with
+  duration, format, genres, dates and composer information. Search tracks or
+  filter missing titles/genres, possible duplicates and unreadable tracks.
+- Find possible gaps and same-disc numbered title matches in Library Health.
+  Gaps require a complete album read; use **Check every track** for larger albums.
+- Check for newer stable versions through **Settings → Application updates**.
+  Automatic startup checks are optional and off by default; **Check now** works
+  independently. Downloads open in your browser.
 
 ## Install and run
 

@@ -32,6 +32,36 @@ fanart.tv lookups, title matching and per-host request pacing) are adapted from
 editor for iBroadcast by the same author, published under the MIT licence. They
 are included here under GNU GPL v2 like the rest of this application.
 
+The stable-release checker and its regression tests are adapted from Tagcast
+0.41.1. Album-detail and track-health behavior also takes inspiration from its
+read-only summaries. The checker retains the upstream MIT notice in
+`rockbox_manager/updates.py`; the MIT notice is reproduced below for source
+and packaged documentation.
+
+```text
+MIT License
+
+Copyright (c) 2026 Cyberdelia
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## Rockbox and other contributors
 
 PodBox builds on [Rockbox](https://www.rockbox.org/) and other projects credited

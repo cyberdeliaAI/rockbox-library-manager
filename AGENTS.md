@@ -28,6 +28,10 @@ and updates to an existing Rockbox database.
   fast directory scanner.
 - `health.py`: library diagnostics; `tags.py`: metadata reading, edit planning,
   and writing; `tag_editor.py`: review and save UI.
+- `album_details.py` / `album_dialog.py`: on-demand, read-only track details;
+  `track_checks.py`: shared disc-scoped metadata matches and complete-list gaps.
+- `updates.py`: optional public stable-release checks and a daily attempt cache;
+  GUI integration uses background workers and the UI queue.
 - `artwork_engine.py`: folder/tag matching, artwork retrieval, candidate
   validation/scoring, output, and fetch caches.
 - `sources.py`: online providers and shared HTTP caching/rate limiting;
@@ -68,6 +72,10 @@ pattern and operation-lock coordination when modifying background operations.
   Preserve explicit aliases and "Keep separate" decisions.
 - The normal index scan avoids tag parsing. Health checks sample first,
   middle, and last tracks by default; thorough mode checks every track.
+  Never infer numbering gaps from sampled/incomplete data or treat metadata
+  matches as audio identity. Album details do not write music files.
+- Automatic update checks are opt-in and off by default. Preserve credential-free
+  requests, timeouts, bounded responses, version validation and fixed release URLs.
 - Tag edits require a before/after review and modify selected fields only.
   Existing unchanged values should not trigger unnecessary file rewrites.
 - Artwork output is square baseline JPEG, using `folder.jpg` or `cover.jpg`.
