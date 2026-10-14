@@ -46,13 +46,28 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+      - name: Require completed release asset publication
+        id: publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id || '' }}
+        run: |
+          if [ -z "$SOURCE_RUN_ID" ]; then
+            echo "eligible=true" >> "$GITHUB_OUTPUT"
+          else
+            published="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/jobs" \
+              --jq '.jobs | any(.name == "Attach verified release downloads" and .conclusion == "success")')"
+            echo "eligible=$published" >> "$GITHUB_OUTPUT"
+          fi
       - name: Verify released archives and prepare candidate
+        if: steps.publication.outputs.eligible == 'true'
         id: candidate
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag || '' }}
         run: python scripts/update_homebrew.py --tap homebrew-tap --output candidate --tag "$RELEASE_TAG"
       - uses: actions/upload-artifact@v4
+        if: steps.publication.outputs.eligible == 'true'
         with:
           name: homebrew-candidate
           path: candidate/*
