@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.3.0
+
+- Add Settings > Application updates: manual stable-release checks and optional
+  automatic checks at startup, limited to once per day including failed attempts.
+  Use GitHub's public API without source keys or credentials; open release pages
+  in the browser instead of installing updates automatically. Existing users
+  keep automatic checking off until they enable it.
+- Add a read-only Album details window with on-demand track metadata, disc/track
+  order, duration, format information, genres, year, composer and file details.
+  Search across tracks and filter missing titles/genres, possible duplicates and
+  unreadable tracks. Preserve the fast folder index and existing tag/artwork tools.
+- Add Library Health diagnostics for same-disc numbered title matches and
+  possible numbering gaps. Preserve existing duplicate-number warnings. Never
+  infer gaps from sampled or incomplete reads, or compare separate untagged disc
+  folders as one disc. Matching metadata does not establish identical audio.
+- Exercise the new dialogs, failure/cancellation paths, update caching and
+  temporary-library read-only behavior in regression and frozen package checks.
+
 ## 1.2.2
 
 - Add native PyInstaller GUI/CLI downloads for Windows x64, Linux x64, and
