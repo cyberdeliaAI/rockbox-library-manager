@@ -43,6 +43,30 @@ Settings, credentials, SQLite data, thumbnails and backups retain their existing
 locations and formats. Installing a new application package does not reset them.
 Backups remain on the user's configured local storage.
 
+## Homebrew on macOS
+
+The publisher-maintained [Cyberdelia tap](https://github.com/cyberdeliaAI/homebrew-apps)
+offers these same macOS archives:
+
+```sh
+brew install --cask cyberdeliaAI/apps/rockbox-library-manager
+```
+
+The cask selects `macos-arm64` or `macos-x64`, verifies a pinned SHA-256,
+installs the app and links its `rockbox-library-manager` CLI. It retains the
+same signing status, settings locations and optional external FFmpeg dependency.
+It does not disable Gatekeeper or remove quarantine attributes.
+
+Quit the app before upgrading. Use `brew update`, then
+`brew upgrade --cask cyberdeliaAI/apps/rockbox-library-manager`.
+New releases become available after both macOS archives have passed the native
+checks and the tap's version and hashes have been updated. The tap's validation
+workflow checks every cask's style and audits both architectures.
+
+`brew uninstall --cask cyberdeliaAI/apps/rockbox-library-manager` removes the app
+and CLI link; settings, credentials, indexes, music and backups remain.
+See the tap README for migration from a manually installed app and maintenance.
+
 ## Command line
 
 The command-line executable shares the same application and retains existing
