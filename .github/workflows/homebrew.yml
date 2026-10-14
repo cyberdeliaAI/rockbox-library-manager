@@ -1,0 +1,160 @@
+name: Update Homebrew tap
+
+on:
+  workflow_run:
+    workflows: [Native downloads]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Latest stable release tag to verify (empty = latest stable release)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rockbox-homebrew-update
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    permissions:
+      contents: read
+      actions: read
+    if: >-
+      github.repository == 'cyberdeliaAI/rockbox-library-manager' &&
+      ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      (github.event.workflow_run.event == 'release' || github.event.workflow_run.event == 'workflow_dispatch')))
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    outputs:
+      changed: ${{ steps.candidate.outputs.changed }}
+    steps:
+      # workflow_run can originate from a PR. Only execute trusted main code;
+      # PR and ordinary main build events are excluded by the job condition.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: cyberdeliaAI/homebrew-apps
+          ref: main
+          path: homebrew-tap
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Require completed release asset publication
+        id: publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id || '' }}
+        run: |
+          if [ -z "$SOURCE_RUN_ID" ]; then
+            echo "eligible=true" >> "$GITHUB_OUTPUT"
+          else
+            published="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/jobs" \
+              --jq '.jobs | any(.name == "Attach verified release downloads" and .conclusion == "success")')"
+            echo "eligible=$published" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Verify released archives and prepare candidate
+        if: steps.publication.outputs.eligible == 'true'
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || '' }}
+        run: python scripts/update_homebrew.py --tap homebrew-tap --output candidate --tag "$RELEASE_TAG"
+      - uses: actions/upload-artifact@v4
+        if: steps.publication.outputs.eligible == 'true'
+        with:
+          name: homebrew-candidate
+          path: candidate/*
+          if-no-files-found: error
+
+  validate:
+    needs: prepare
+    if: needs.prepare.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_ANALYTICS: 1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: cyberdeliaAI/homebrew-apps
+          ref: main
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: homebrew-candidate
+          path: candidate
+      - name: Make the candidate available to Homebrew
+        run: |
+          cp candidate/rockbox-library-manager.rb Casks/rockbox-library-manager.rb
+          tap_parent="$(brew --repository)/Library/Taps/cyberdeliaai"
+          mkdir -p "$tap_parent"
+          ln -s "$GITHUB_WORKSPACE" "$tap_parent/homebrew-apps"
+      - name: Check cask definition
+        run: |
+          brew style Casks/rockbox-library-manager.rb
+          brew audit --cask --skip-style --arch all cyberdeliaAI/apps/rockbox-library-manager
+      - name: Check installed app and CLI with temporary data
+        shell: bash
+        run: |
+          brew install --cask --no-ask --appdir="$RUNNER_TEMP/apps" cyberdeliaAI/apps/rockbox-library-manager
+          rockbox-library-manager --version
+          rockbox-library-manager artwork --help
+          rockbox-library-manager --bundle-smoke-test "$RUNNER_TEMP/cli-report.json"
+          "$RUNNER_TEMP/apps/Rockbox Library Manager.app/Contents/MacOS/Rockbox Library Manager" \
+            --bundle-smoke-test "$RUNNER_TEMP/gui-report.json"
+          codesign --verify --deep --strict "$RUNNER_TEMP/apps/Rockbox Library Manager.app"
+          brew uninstall --cask cyberdeliaAI/apps/rockbox-library-manager
+
+  publish:
+    needs: [prepare, validate]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: cyberdeliaAI/homebrew-apps
+          ref: main
+          path: homebrew-tap
+          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: homebrew-candidate
+          path: candidate
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Apply validated candidate without overwriting concurrent cask edits
+        id: apply
+        run: python scripts/update_homebrew.py --tap homebrew-tap --output candidate --apply
+      - name: Publish updated cask
+        if: steps.apply.outputs.changed == 'true'
+        working-directory: homebrew-tap
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/rockbox-library-manager.rb
+          git commit -m "Update Rockbox Library Manager from verified release downloads"
+          git push origin HEAD:main
+      - name: Verify publishing access when already up to date
+        if: steps.apply.outputs.changed != 'true'
+        working-directory: homebrew-tap
+        run: git push --dry-run origin HEAD:main
