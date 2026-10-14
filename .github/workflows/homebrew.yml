@@ -20,6 +20,9 @@ concurrency:
 
 jobs:
   prepare:
+    permissions:
+      contents: read
+      actions: read
     if: >-
       github.repository == 'cyberdeliaAI/rockbox-library-manager' &&
       ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
