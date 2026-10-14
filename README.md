@@ -1,8 +1,8 @@
 # Rockbox Library Manager
 
-**A desktop companion tool built for [PodBox](https://github.com/anthonyfletcher/podbox).**
+**A desktop companion tool for [Rockbox](https://www.rockbox.org/) and [PodBox](https://github.com/anthonyfletcher/podbox).**
 Browse your music library, manage artist and album artwork, check library health,
-and edit album tags to prepare your library for use with PodBox.
+and edit album tags to prepare your library for use with Rockbox or PodBox.
 
 ## Credits and origins
 
