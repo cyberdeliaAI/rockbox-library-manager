@@ -6,6 +6,7 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 import traceback
 from pathlib import Path
 
@@ -22,7 +23,8 @@ def run(args):
         import certifi
         from mutagen.flac import FLAC
         from PIL import Image
-        from rockbox_manager import __version__, gui, media_tools, tags
+        from rockbox_manager import __version__, gui, media_tools, tags, updates
+        from rockbox_manager.album_dialog import AlbumDialog
         from rockbox_manager import database_dialog, tag_editor, picker  # noqa: F401
         from rockbox_manager.media_dialog import MediaDialog
         from rockbox_manager.library import FastLibraryScanner
@@ -41,6 +43,7 @@ def run(args):
                 shutil.copyfile(Path(sys._MEIPASS) / "build-check" / "silence.flac", audio)
                 flac = FLAC(audio)
                 flac["artist"], flac["album"] = ["Test Artist"], ["Test Album"]
+                flac["title"], flac["genre"], flac["tracknumber"] = ["Test Track"], ["Rock"], ["1"]
                 flac.save()
                 if tags.read_values(audio)["artist"] != ["Test Artist"]:
                     raise RuntimeError("Bundled metadata support failed")
@@ -60,6 +63,45 @@ def run(args):
                 dialog = MediaDialog(app, music, base / "Config", gui.C, lambda _: None)
                 root.update()
                 dialog.close()
+                details = AlbumDialog(app, album, "Test Artist", "Test Album")
+                deadline = time.monotonic() + 15
+                while details.running and time.monotonic() < deadline:
+                    root.update()
+                    time.sleep(.01)
+                if details.running or len(details.tree.get_children()) != 1 or details.data.tracks[0].value("title") != "Test Track":
+                    raise RuntimeError("Bundled album details failed")
+                details.close()
+
+                class ReleaseReply:
+                    status_code = 200
+
+                    def __enter__(self):
+                        return self
+
+                    def __exit__(self, *args):
+                        pass
+
+                    def iter_content(self, size):
+                        yield b'{"tag_name":"v99.0.0","name":"Bundle test"}'
+
+                class ReleaseSession(ReleaseReply):
+                    def get(self, url, **kwargs):
+                        if url != updates.RELEASE_API or self.trust_env or kwargs.get("allow_redirects"):
+                            raise RuntimeError("Bundled update request isolation failed")
+                        return ReleaseReply()
+
+                original_session = updates.requests.Session
+                updates.requests.Session = ReleaseSession
+                try:
+                    app.update_check_btn.invoke()
+                    deadline = time.monotonic() + 15
+                    while app._update_running and time.monotonic() < deadline:
+                        root.update()
+                        time.sleep(.01)
+                    if app._update_running or not app._update_result.get("available"):
+                        raise RuntimeError("Bundled update UI failed")
+                finally:
+                    updates.requests.Session = original_session
                 cancel = threading.Event()
                 scanned_media = media_tools.scan(music, 300, base / "media.sqlite3", cancel)
                 applied = media_tools.apply(music, scanned_media.candidates, 300, base / "backups", "", cancel)
@@ -91,7 +133,8 @@ def run(args):
                     raise RuntimeError(f"Tk/Pillow desktop callbacks failed: {errors}")
                 result = {"ok": True, "version": __version__, "frozen": True,
                           "tk": root.tk.call("info", "patchlevel"), "tkdnd": root.TkdndVersion,
-                          "ffmpeg_checked": bool(ffmpeg), "platform": sys.platform}
+                          "ffmpeg_checked": bool(ffmpeg), "platform": sys.platform,
+                          "album_details_checked": True, "update_ui_checked": True}
             finally:
                 if app is not None:
                     for job in root.tk.splitlist(root.tk.call("after", "info")):

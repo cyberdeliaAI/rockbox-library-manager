@@ -24,7 +24,7 @@ EDIT_FIELDS = [
     ("genre", "Genre"),
 ]
 LABELS = dict(EDIT_FIELDS)
-HEALTH_FIELDS = ("artist", "albumartist", "album", "genre", "date", "tracknumber", "discnumber")
+HEALTH_FIELDS = ("artist", "albumartist", "album", "genre", "date", "tracknumber", "discnumber", "title")
 YEAR_RE = re.compile(r"^\d{4}(?:-\d{2}(?:-\d{2})?)?$")
 # What rockbox_database.preview_update accepts as a year: four digits, then the end or a separator.
 DATABASE_YEAR_RE = re.compile(r"^\d{4}(?:$|[-/T ])")
@@ -50,6 +50,11 @@ def read_values(path: Path, keys: Iterable[str] = HEALTH_FIELDS) -> dict[str, li
     audio = MutagenFile(str(path), easy=True)
     if audio is None:
         raise TagError("unsupported metadata")
+    return values_from_audio(audio, keys)
+
+
+def values_from_audio(audio, keys: Iterable[str]) -> dict[str, list[str]]:
+    """Read supported easy-tag values from an already opened mutagen object."""
     out: dict[str, list[str]] = {}
     for key in keys:
         try:
