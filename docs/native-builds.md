@@ -59,9 +59,12 @@ It does not disable Gatekeeper or remove quarantine attributes.
 
 Quit the app before upgrading. Use `brew update`, then
 `brew upgrade --cask cyberdeliaAI/apps/rockbox-library-manager`.
-New releases become available after both macOS archives have passed the native
-checks and the tap's version and hashes have been updated. The tap's validation
-workflow checks every cask's style and audits both architectures.
+After successful stable release builds, the **Update Homebrew tap** workflow
+verifies the actual macOS downloads against their companion SHA-256 files and
+GitHub asset digests, checks the bundled version, and tests the candidate cask
+installation and GUI/CLI on both Mac architectures. It then commits the verified
+version and hashes to the tap. Prereleases and older versions are skipped.
+The tap's own validation workflow checks every cask after the push.
 
 `brew uninstall --cask cyberdeliaAI/apps/rockbox-library-manager` removes the app
 and CLI link; settings, credentials, indexes, music and backups remain.
@@ -133,3 +136,31 @@ job has `contents: write`; pull-request build jobs cannot publish.
 To retry an existing release, run `Native downloads` manually on main and enter
 its tag. This replaces generated assets with the same filenames after successful
 validation. Leave the tag blank to build workflow artifacts without publishing.
+
+## Automatic Homebrew publishing
+
+`.github/workflows/homebrew.yml` runs after successful `Native downloads` release
+or manual publication runs. It executes scripts from trusted `main`, excludes
+pull-request and ordinary main builds, and updates only
+`Casks/rockbox-library-manager.rb` in `cyberdeliaAI/homebrew-apps`. The existing
+Tagcast cask is unaffected. Verification and installation jobs have read-only
+GitHub permissions. Only the final job receives a dedicated tap deploy key.
+
+The writable deploy key named **Rockbox Library Manager release automation**
+is registered in the tap repository. Its private key is stored only as the
+`HOMEBREW_TAP_DEPLOY_KEY` Actions secret in this repository; it is not a personal
+account token. To rotate it, replace that secret and the corresponding tap
+deploy key. Revoke both to disable this cross-repository publishing access.
+
+The workflow is serialized, refuses to downgrade, and refuses to overwrite a
+cask changed during validation. Repeated runs with identical downloads do not
+create commits. Rebuilding the same release with different verified archives
+refreshes its hashes; it does not force reinstallations of existing working
+copies. Prefer a new application version for changes users should upgrade to.
+
+To backfill or retry, run **Update Homebrew tap** manually on `main`, optionally
+entering the current latest stable tag. A manual run also tests an unchanged
+cask and verifies SSH publishing access with a dry-run push. No new release is
+needed. Failures leave the cask unchanged; inspect the failed workflow job and
+retry after correcting the prerequisite. Concurrent tap changes cause a clean
+failure rather than a forced push.
