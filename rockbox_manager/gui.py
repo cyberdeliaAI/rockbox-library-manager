@@ -68,6 +68,8 @@ except Exception:
 
 
 from . import __version__ as APP_VERSION
+from .album_dialog import AlbumDialog
+from .updates import UpdateChecker
 from .common import (APP_NAME, EXCLUDED_DIRS, IS_MAC, MOD, MOD_LABEL, USER_AGENT, anchor_crop_square,  # noqa: F401
                      download_image, format_bytes, humanize_age, is_url, load_image, open_in_file_manager, to_rgb)
 from .folders import consolidate_artist_folders  # noqa: F401
@@ -360,6 +362,10 @@ class ArtworkApp:
         self._empty_widgets: list[tk.Misc] = []
         self.health_filter = "all"
         self.health_thorough_var = tk.BooleanVar(value=bool(self.config.get("health_thorough", False)))
+        self.auto_updates_var = tk.BooleanVar(value=self.config.get("auto_updates") is True)
+        self.update_checker = UpdateChecker(self._read_update_cache, self._write_update_cache)
+        self._update_running = False
+        self._update_result = self.update_checker.check(enabled=False)
         self.selected_health_issue_id: Optional[int] = None
 
         zoom = int(self.config.get("zoom") or ZOOM_DEFAULT)
@@ -406,6 +412,9 @@ class ArtworkApp:
         self.root.after(40, self._process_ui_queue)
         self.root.after(800, self._poll_device)
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+        self._show_update_result(self._update_result)
+        if self.auto_updates_var.get():
+            self.root.after(1200, self.check_updates)
 
         # First-time convenience: if a root is configured but the index is empty, scan automatically.
         if self.db.counts()["total"] == 0 and self._valid_music_root(silent=True):
@@ -686,6 +695,8 @@ class ArtworkApp:
         self.open_folder_btn.grid(row=0, column=1, sticky="ew", padx=(3, 0))
         self.edit_tags_btn = ttk.Button(self.detail_body, text="Edit album tags…", command=self.edit_selected_tags)
         self.edit_tags_btn.pack(fill="x", pady=(7, 0))
+        self.album_details_btn = ttk.Button(self.detail_body, text="Album details…", command=self.open_album_details)
+        self.album_details_btn.pack(fill="x", pady=(7, 0))
         self.detail_hint = tk.Label(self.detail_body, text="", bg=C["panel"], fg=C["faint"], font=self.F.tiny,
                                     anchor="w", justify="left", wraplength=P)
         self.detail_hint.pack(fill="x", pady=(8, 0))
@@ -911,6 +922,20 @@ class ArtworkApp:
 
         device_db = self._settings_card(left, "Rockbox database", "Update the iPod database after editing tags, with verified local backups.")
         ttk.Button(device_db, text="Rockbox database…", command=self.open_rockbox_database).pack(anchor="w")
+
+        update_card = self._settings_card(right, "Application updates",
+            "Check GitHub for a newer stable version. No music, source keys or credentials are sent; downloads are opened in your browser.")
+        ttk.Checkbutton(update_card, text="Check automatically (at most once a day)",
+                        variable=self.auto_updates_var, command=self._toggle_auto_updates).pack(anchor="w")
+        self.update_status = tk.Label(update_card, text=f"Installed: {APP_VERSION}", bg=C["panel"],
+                                      fg=C["muted"], font=self.F.small, wraplength=380, justify="left", anchor="w")
+        self.update_status.pack(fill="x", pady=8)
+        update_row = tk.Frame(update_card, bg=C["panel"])
+        update_row.pack(fill="x")
+        self.update_check_btn = ttk.Button(update_row, text="Check now", command=lambda: self.check_updates(manual=True))
+        self.update_check_btn.pack(side="left")
+        self.update_open_btn = ttk.Button(update_row, text="View releases ↗", command=self.open_update_release)
+        self.update_open_btn.pack(side="left", padx=(7, 0))
 
         src = self._settings_card(right, "Online sources",
                                   "MusicBrainz, Cover Art Archive, Deezer, Apple Music and TheAudioDB work "
@@ -1452,6 +1477,17 @@ class ArtworkApp:
         if not item or item.kind != "album" or not folder:
             return
         TagEditorDialog(self, folder, item.artist, item.album)
+
+    def open_album_details(self) -> None:
+        item = self.db.get_item(self.selected_item_id or -1)
+        folder = self.item_folder(item) if item else None
+        if not item or item.kind != "album" or not folder:
+            return
+        existing = getattr(self, "_album_dialog", None)
+        if existing is not None and existing.alive():
+            existing.win.lift()
+            return
+        self._album_dialog = AlbumDialog(self, folder, item.artist, item.album)
 
     def set_view(self, view: str) -> None:
         self.view = view
@@ -2075,6 +2111,7 @@ class ArtworkApp:
         self.config["page_size"] = int(self.config.get("page_size") or DEFAULT_PAGE_SIZE)
         self.config["zoom"] = self.zoom
         self.config["health_thorough"] = bool(self.health_thorough_var.get())
+        self.config["auto_updates"] = self.auto_updates_var.get()
         self.config["kind_filter"] = self.kind_filter
         self.config["status_filter"] = self.status_filter
         try:
@@ -2085,6 +2122,62 @@ class ArtworkApp:
     def _mark_settings_dirty(self) -> None:
         if not self._settings_loading:
             self.settings_state.configure(text="Unsaved changes", fg=C["warn"])
+
+    def _read_update_cache(self, name: str) -> Any:
+        try:
+            return json.loads((local_app_dir() / name).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+
+    def _write_update_cache(self, name: str, data: dict) -> None:
+        engine.write_private_text(local_app_dir() / name, json.dumps(data))
+
+    def _toggle_auto_updates(self) -> None:
+        self._persist_basic_config()
+        if self.auto_updates_var.get():
+            self.check_updates()
+
+    def check_updates(self, manual: bool = False) -> None:
+        if self._update_running:
+            return
+        enabled = self.auto_updates_var.get()
+        self._update_running = True
+        self.update_check_btn.state(["disabled"])
+        self.update_status.configure(text=f"Installed: {APP_VERSION} · Checking…")
+
+        def work() -> None:
+            try:
+                result = self.update_checker.check(enabled=enabled, manual=manual)
+            except Exception:
+                result = {"error": "Could not check for updates. Try again later.", "available": False}
+            self.ui_queue.put(("ui_callback", (self._show_update_result, (result,))))
+
+        threading.Thread(target=work, name="update-check", daemon=True).start()
+
+    def _show_update_result(self, result: dict) -> None:
+        self._update_running = False
+        self._update_result = result
+        self.update_check_btn.state(["!disabled"])
+        message = result.get("error")
+        if not message:
+            message = (f"Version {result['latest']} is available." if result.get("available") else
+                       "No newer stable version found." if result.get("latest") else "Not checked yet.")
+        self.update_status.configure(text=f"Installed: {APP_VERSION} · {message}",
+                                     fg=C["warn"] if result.get("error") else C["accent"] if result.get("available") else C["muted"])
+        self.update_open_btn.configure(text="Download update ↗" if result.get("available") else "View releases ↗")
+        if result.get("available"):
+            self.toast.show(f"Rockbox Library Manager {result['latest']} is available. See Settings > Application updates.", "ok", ms=8000)
+
+    def open_update_release(self) -> None:
+        from .updates import RELEASE_PAGE
+        # Construct a fixed repository URL, never trust an API/cache-supplied URL.
+        from .updates import version_order
+        latest = self._update_result.get("latest") if self._update_result.get("available") else None
+        try:
+            version_order(latest)
+        except (TypeError, ValueError):
+            latest = None
+        webbrowser.open(RELEASE_PAGE + latest if latest else "https://github.com/cyberdeliaAI/rockbox-library-manager/releases")
 
     def _toggle_secret(self) -> None:
         showing = self.secret_toggle.cget("text") == "Hide"
@@ -2272,11 +2365,13 @@ class ArtworkApp:
         if item.kind == "album":
             self.d_sub.configure(text=item.artist)
             self.edit_tags_btn.pack(fill="x", pady=(7, 0))
+            self.album_details_btn.pack(fill="x", pady=(7, 0), after=self.edit_tags_btn)
         else:
             n = self.album_counts.get(item.artist, 0)
             suffix = f"{len(item.group_paths)} folders" if len(item.group_paths) > 1 else "library"
             self.d_sub.configure(text=f"{n} album" + ("" if n == 1 else "s") + f" in {suffix}")
             self.edit_tags_btn.pack_forget()
+            self.album_details_btn.pack_forget()
         color = {"Existing": C["ok"], "Missing": C["warn"], "Problem": C["bad"]}[item.status]
         self.chip_status.configure(text=item.status_label.upper(), fg=color, bg=blend(C["panel"], color, 0.16))
         self.chip_kind.configure(text=item.kind.upper())
@@ -3070,6 +3165,9 @@ class ArtworkApp:
             pass
         self._persist_basic_config()
         sys.stdout = getattr(self, "_orig_stdout", sys.stdout)
+        dialog = getattr(self, "_album_dialog", None)
+        if dialog is not None and dialog.alive():
+            dialog.close()
         self.thumbs.shutdown()
         self.root.destroy()
 

@@ -18,6 +18,8 @@ from typing import Any, Callable, Optional
 from . import artwork_engine as engine
 from . import tags
 from .library import LibraryDB, LibraryItem, artist_identity_key, choose_display_name
+from .track_checks import inspect_tracks
+from .album_details import album_files
 
 ISSUE_LABELS = {
     "duplicate_artist": "Duplicate artist",
@@ -31,6 +33,8 @@ ISSUE_LABELS = {
     "missing_year": "Missing year",
     "missing_genre": "Missing genre",
     "track_numbers": "Track numbers",
+    "duplicate_track": "Possible duplicate track",
+    "track_gaps": "Possibly incomplete album",
 }
 
 # Health view filters: one segment per group of issue types.
@@ -47,7 +51,7 @@ CATEGORIES = {
     "tags": ("tag_mismatch", "inconsistent_album", "missing_tags"),
     "database": ("multiple_values", "unreadable_year"),   # these stop the direct database update
     "genres": ("combined_genre", "genre_spelling"),
-    "missing": ("missing_year", "missing_genre", "track_numbers"),
+    "missing": ("missing_year", "missing_genre", "track_numbers", "duplicate_track", "track_gaps"),
 }
 DATABASE_FIELDS = ("artist", "albumartist", "album", "genre", "date")
 
@@ -116,6 +120,16 @@ class HealthScanner:
                 except Exception as exc:
                     unreadable.append(f"{path.name}: {exc}")
             album_issues = self._album_issues(item, samples, read, unreadable)
+            # Gaps need the entire album, never infer them from three samples.
+            complete = len(read) == len(files) and not unreadable
+            if complete:
+                listed, listing_errors = album_files(album_dir, self.cancel)
+                complete = not listing_errors and set(listed) == {p.resolve() for p in files} and not self.cancel.is_set()
+            for issue in inspect_tracks(read, complete=complete):
+                album_issues.append({"artist": item.artist, "album": item.album,
+                                     "relative_path": item.relative_path, "issue_type": issue["type"],
+                                     "severity": "info", "details": issue["details"],
+                                     "data": {"files": [str(p.relative_to(album_dir)) for p in issue["paths"]]}})
             issues += album_issues
             for values in read.values():
                 for genre in values.get("genre", []):
