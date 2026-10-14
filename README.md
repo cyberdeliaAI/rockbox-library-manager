@@ -4,42 +4,6 @@
 Browse your music library, manage artist and album artwork, check library health,
 and edit album tags to prepare your library for use with Rockbox or PodBox.
 
-## Versions
-
-**Version 1.0.0** is the first public release.
-
-**Version 1.1.0** includes a fix for PodBox's `/<HDD0>/Music/...` database
-paths, including on Windows. It provides **Settings → Rockbox database…** for previewing tag
-updates to an existing iPod index, making verified local backups and restoring
-them. This is experimental until tested on the player; see the
-[database update and recovery guide](docs/rockbox-database.md).
-
-**Version 1.2.0** adds **Settings → Prepare media for PodBox → Scan and
-prepare…**: convert hi-res FLAC, resize oversized or progressive artwork, and
-replace undersized artwork with a larger online source, with original-media
-backups enabled by default (FLAC conversion requires FFmpeg). Artwork search now
-also uses Deezer, Apple Music and Cover Art Archive release groups without a key,
-and Discogs with a token. The tag editor suggests years and genres and shows a
-review before saving, and Library Health finds the tag problems that stop the
-Rockbox database update or split Rockbox's genre list. See the
-[media preparation guide](docs/media-preparation.md) and [CHANGELOG](CHANGELOG.md).
-
-**Version 1.2.1** fixes duplicate-folder conflicts, interrupted-merge reporting,
-incomplete scans, artwork saves after a music-folder change, separator-only
-genre checks, selected-artwork caching, and online fallback after rejected
-embedded covers. Provider errors redact credentials, and additional regression
-tests cover these paths. See [CHANGELOG](CHANGELOG.md).
-
-**Version 1.2.2** adds standalone PyInstaller downloads for Windows, Linux and
-macOS (Apple Silicon and Intel), including drag and drop and the existing CLI.
-GitHub Actions builds and checks the extracted packages before attaching them
-to a release. See the [native build guide](docs/native-builds.md).
-
-**Version 1.3.0** adds on-demand album details, track search/filtering within an
-album, possible duplicate-track and incomplete-album health checks, and optional
-GitHub update notifications. Existing scanning, tag editing and artwork behavior
-are retained. See [album details, health and updates](docs/library-details.md).
-
 ## Screenshots
 
 Screenshots from version 1.1.0-beta.1 on Windows.
@@ -107,6 +71,37 @@ FFmpeg remains optional and separate: install it and select its executable in
 Settings for audio conversion. Scanning and artwork preparation work without it.
 See the [native build guide](docs/native-builds.md) for CLI usage, checksums,
 platform coverage and signing status.
+
+### Homebrew on macOS
+
+Install the same standalone app through the
+[Cyberdelia Homebrew tap](https://github.com/cyberdeliaAI/homebrew-apps):
+
+```sh
+brew install --cask cyberdeliaAI/apps/rockbox-library-manager
+```
+
+Homebrew selects the Apple Silicon or Intel download, verifies its checksum and
+installs **Rockbox Library Manager.app** in Applications. The included
+`rockbox-library-manager` CLI is also available in your terminal. Python is
+bundled; FFmpeg remains optional and separate for audio conversion.
+
+If you installed the app manually, quit it and move the existing
+`/Applications/Rockbox Library Manager.app` aside before installing with
+Homebrew. Your separate settings and library index stay in place. The first
+launch follows the same macOS security checks as the direct download; see the
+[native build guide](docs/native-builds.md).
+
+For updates, quit the app, then run:
+
+```sh
+brew update
+brew upgrade --cask cyberdeliaAI/apps/rockbox-library-manager
+```
+
+New releases become available after the tap's version and checksums are updated.
+See the [tap guide](https://github.com/cyberdeliaAI/homebrew-apps#readme) for removal
+and maintenance.
 
 ### Run from source
 
@@ -320,6 +315,42 @@ and 3.13; FFmpeg is installed on Windows and Linux for the conversion tests.
 - `rockbox_manager/database_dialog.py`: database preview, backup and restore UI.
 - `rockbox_manager/common.py`, `ui_theme.py`, `widgets.py`: shared helpers, theme and widgets.
 - `tests/`: unit and dialog tests.
+
+## Versions
+
+**Version 1.0.0** is the first public release.
+
+**Version 1.1.0** includes a fix for PodBox's `/<HDD0>/Music/...` database
+paths, including on Windows. It provides **Settings → Rockbox database…** for previewing tag
+updates to an existing iPod index, making verified local backups and restoring
+them. This is experimental until tested on the player; see the
+[database update and recovery guide](docs/rockbox-database.md).
+
+**Version 1.2.0** adds **Settings → Prepare media for PodBox → Scan and
+prepare…**: convert hi-res FLAC, resize oversized or progressive artwork, and
+replace undersized artwork with a larger online source, with original-media
+backups enabled by default (FLAC conversion requires FFmpeg). Artwork search now
+also uses Deezer, Apple Music and Cover Art Archive release groups without a key,
+and Discogs with a token. The tag editor suggests years and genres and shows a
+review before saving, and Library Health finds the tag problems that stop the
+Rockbox database update or split Rockbox's genre list. See the
+[media preparation guide](docs/media-preparation.md) and [CHANGELOG](CHANGELOG.md).
+
+**Version 1.2.1** fixes duplicate-folder conflicts, interrupted-merge reporting,
+incomplete scans, artwork saves after a music-folder change, separator-only
+genre checks, selected-artwork caching, and online fallback after rejected
+embedded covers. Provider errors redact credentials, and additional regression
+tests cover these paths. See [CHANGELOG](CHANGELOG.md).
+
+**Version 1.2.2** adds standalone PyInstaller downloads for Windows, Linux and
+macOS (Apple Silicon and Intel), including drag and drop and the existing CLI.
+GitHub Actions builds and checks the extracted packages before attaching them
+to a release. See the [native build guide](docs/native-builds.md).
+
+**Version 1.3.0** adds on-demand album details, track search/filtering within an
+album, possible duplicate-track and incomplete-album health checks, and optional
+GitHub update notifications. Existing scanning, tag editing and artwork behavior
+are retained. See [album details, health and updates](docs/library-details.md).
 
 ## Credits and origins
 
