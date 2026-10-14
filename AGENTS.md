@@ -126,3 +126,10 @@ Run from the repository root:
   see `docs/native-builds.md` and `.github/workflows/builds.yml`.
 - Report tests actually executed, skips, and missing prerequisites. Do not
   equate lint success or mocked checks with full player compatibility.
+
+- Homebrew releases use `.github/workflows/homebrew.yml` and
+  `scripts/update_homebrew.py`. Preserve stable-only updates, actual archive and
+  companion/asset digest verification, both Mac installation checks, read-only
+  validation jobs, the dedicated tap deploy key in the publishing job, and
+  concurrent-edit/downgrade safeguards. Manual retries must not create releases
+  or modify unrelated casks. See `docs/native-builds.md` for credential rotation.

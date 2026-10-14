@@ -99,7 +99,8 @@ brew update
 brew upgrade --cask cyberdeliaAI/apps/rockbox-library-manager
 ```
 
-New releases become available after the tap's version and checksums are updated.
+After successful stable release builds, a workflow verifies both macOS downloads,
+tests their Homebrew installation and updates the tap's version and checksums automatically.
 See the [tap guide](https://github.com/cyberdeliaAI/homebrew-apps#readme) for removal
 and maintenance.
 
