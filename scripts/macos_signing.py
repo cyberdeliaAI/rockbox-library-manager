@@ -33,6 +33,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -81,6 +82,22 @@ def command(args, label, *, check=True, timeout=120):
     return result
 
 
+def stapler(action, app):
+    # EX_NOHOST (68) can be an unexpected ticket-service response even after
+    # Apple accepted and stapled the app. Retry that lookup only, never submission
+    # or a rejected/missing/invalid ticket, and still require a successful check.
+    for attempt, delay in enumerate((0, 5, 15)):
+        if delay:
+            print(f"Apple ticket lookup returned 68; retrying {action} ({attempt + 1}/3)", flush=True)
+            time.sleep(delay)
+        result = command(["xcrun", "stapler", action, str(app)], "Apple ticket lookup", check=False)
+        if result.returncode == 0:
+            return
+        if result.returncode != 68:
+            raise RuntimeError(f"Notarization ticket {action} failed (exit {result.returncode})")
+    raise RuntimeError(f"Apple ticket service could not confirm {action} after three attempts")
+
+
 @contextmanager
 def signing_environment(config):
     """Import only for the build; restore the keychain search list even after failure."""
@@ -127,7 +144,7 @@ def verify_app(app, team=None):
         if ("Authority=Developer ID Application:" not in detail or f"TeamIdentifier={team}\n" not in detail
                 or not re.search(r"^CodeDirectory .*flags=.*\bruntime\b", detail, re.MULTILINE)):
             raise RuntimeError("App and CLI require hardened Developer ID signatures from APPLE_TEAM_ID")
-    command(["xcrun", "stapler", "validate", str(app)], "Validate notarization ticket")
+    stapler("validate", app)
     command(["spctl", "--assess", "--type", "execute", "--verbose=2", str(app)], "Check Gatekeeper")
 
 
@@ -146,5 +163,5 @@ def notarize(app, config):
             accepted = False
         if not accepted:
             raise RuntimeError("Apple has not accepted this notarization; no signed download will be published")
-    command(["xcrun", "stapler", "staple", str(app)], "Staple notarization ticket")
+    stapler("staple", app)
     verify_app(app, config["APPLE_TEAM_ID"])

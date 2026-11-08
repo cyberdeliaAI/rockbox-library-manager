@@ -64,6 +64,10 @@ hashes before uploading any downloads. A failed signed build never falls back
 to an unsigned archive. No live music library or attached player is used by CI.
 
 The notary wait is bounded at 20 minutes and Mac CI jobs allow 60 minutes.
+Apple's separate ticket lookup can return `EX_NOHOST` (68) after acceptance;
+staple/validate retry only that code up to three times, waiting 5 and 15 seconds.
+Invalid, missing or revoked tickets still fail immediately, and every accepted
+download must pass ticket validation. Notarization submissions are not retried.
 An Apple delay or timeout is not acceptance; inspect the result before retrying.
 Notarization does not replace testing on the actual player. The existing
 Homebrew workflow still verifies and tests the final downloads before updating

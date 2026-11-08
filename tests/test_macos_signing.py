@@ -99,6 +99,20 @@ class MacSigningTests(unittest.TestCase):
                     verify.assert_not_called()
                     self.assertFalse(any(call.args[0][:3] == ["xcrun", "stapler", "staple"] for call in run.call_args_list))
 
+    def test_ticket_service_retry_is_bounded_and_does_not_accept_invalid_tickets(self):
+        results = [subprocess.CompletedProcess([], code, "", "") for code in (68, 68, 0)]
+        with patch.object(signing, "command", side_effect=results) as run, patch.object(signing.time, "sleep") as sleep:
+            signing.stapler("validate", Path("Test.app"))
+            self.assertEqual(run.call_count, 3)
+            self.assertEqual([call.args[0] for call in sleep.call_args_list], [5, 15])
+            self.assertTrue(all(call.args[0][:3] == ["xcrun", "stapler", "validate"] for call in run.call_args_list))
+        for code, attempts in ((68, 3), (65, 1), (66, 1), (77, 1)):
+            with self.subTest(code=code), patch.object(signing.time, "sleep"), \
+                    patch.object(signing, "command", return_value=subprocess.CompletedProcess([], code, "", "")) as run:
+                with self.assertRaises(RuntimeError):
+                    signing.stapler("validate", Path("Test.app"))
+                self.assertEqual(run.call_count, attempts)
+
 
 class ReleaseEvidenceTests(unittest.TestCase):
     def test_both_archives_require_exact_hash_bound_signing_evidence(self):
