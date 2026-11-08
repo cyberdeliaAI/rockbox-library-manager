@@ -9,7 +9,7 @@ from tkinter import ttk
 from .album_details import AlbumDetails, duration_text, read_album
 from .sources import strip_accents
 from .track_checks import position
-from .guest_credits import track_guests
+from .guest_credits import KnownArtists, track_guests
 from .ui_theme import C
 
 
@@ -125,7 +125,7 @@ class AlbumDialog:
             self.status.configure(text="Read cancelled.")
             return
         self.data = result
-        self.known_artists = {item.artist for item in self.app.db.physical_items("artist")}
+        self.known_artists = KnownArtists(item.artist for item in self.app.db.physical_items("artist"))
         self.folder = result.folder or self.folder
         durations = [t.duration for t in result.tracks if t.duration is not None]
         discs = {position(t.value("discnumber")) for t in result.tracks}

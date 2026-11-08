@@ -1,6 +1,9 @@
 # Changelog
 
-## 1.5.0
+## 1.5.0-beta.1
+
+First test release of the five PodBox extensions. The stable Homebrew channel
+remains on 1.4.0 while this prerelease is evaluated.
 
 - Add separate PodBox preparation tools using pinned player engines: build/update
   or rebuild the layout-5 database, prepare format-8 artwork caches and run

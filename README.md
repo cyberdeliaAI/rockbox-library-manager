@@ -376,7 +376,7 @@ background information. Official macOS downloads use Developer ID signing and
 Apple notarization, verified after extraction. See the
 [signing guide](docs/code-signing.md) and [CHANGELOG](CHANGELOG.md).
 
-**Version 1.5.0** adds reviewed PodBox database/artwork/sound preparation,
+**Version 1.5.0-beta.1** is a test release adding reviewed PodBox database/artwork/sound preparation,
 new-file EQ refitting and read-only guest-credit suggestions. See the
 [preparation guide](docs/podbox-tools.md) for format and platform requirements.
 
