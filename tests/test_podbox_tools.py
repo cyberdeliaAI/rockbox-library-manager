@@ -98,6 +98,15 @@ class NativePodBoxTests(unittest.TestCase):
         self.assertEqual(self.preview().changes, [])
         self.assertEqual((self.library / "user/player_name.txt").read_text(), "Preserve me")
 
+    def test_non_ascii_player_root_works_with_native_argv_and_filesystem(self):
+        destination = self.base / "Player Björk 日本語"
+        self.device.rename(destination)
+        self.device = destination
+        self.library = destination / ".rockbox/library"
+        self.album = destination / "Music/Artist/Album"
+        self.install()
+        self.assertEqual(len(pb._runtime(pb._database(self.library))), 2)
+
     def test_add_change_delete_and_rebuild_preserve_seeded_runtime(self):
         self.install()
         db = pb._database(self.library)
