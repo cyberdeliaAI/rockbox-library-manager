@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.4.0
+
+- Keep the existing Tk interface and add explicit, read-only artist biographies and
+  album background from TheAudioDB. Opening the view makes no request; exact
+  identities, bounded local text caching and a separate source link are used.
+- Sign official macOS Apple Silicon and Intel builds with Developer ID and the
+  hardened runtime, notarize with Apple and staple the accepted ticket. Verify
+  the extracted GUI, CLI, signatures and Gatekeeper before writing checksums.
+- Require archive-bound signing/runtime evidence for both Mac downloads before
+  release attachment. Preserve ordinary ad-hoc PR builds and older tag recipes.
+- Preserve existing artwork rules, tag review, database recovery, CLI commands,
+  optional update checks, external FFmpeg and automatic Homebrew publishing.
+
 ## 1.3.0
 
 - Add Settings > Application updates: manual stable-release checks and optional

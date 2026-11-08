@@ -25,10 +25,12 @@ Builds are checked on Windows Server 2022, macOS 14 (Apple Silicon), macOS 15
 system libraries, including glibc 2.35 or later; it is not a universal Linux
 binary. Other OS versions are not part of this native build matrix.
 
-macOS bundles have an ad-hoc integrity signature, but are not Developer ID
-signed or notarized. Windows packages are not Authenticode signed. The OS may
-require explicit approval before opening a downloaded application. Certificate
-signing is not configured in this repository.
+Official macOS downloads built with the 1.4.0 recipe are Developer ID signed and
+notarized by Apple, with a stapled ticket, Gatekeeper and signature checks after
+extraction. Ordinary PR/local builds keep ad-hoc integrity signatures; historical
+releases retain their original signing status. Windows packages are not
+Authenticode signed. See [code signing](code-signing.md) for prerequisites,
+secret handling and signed test builds.
 
 Every native archive has a `.sha256` file. Compare it with `Get-FileHash` on
 Windows, `shasum -a 256` on macOS, or `sha256sum` on Linux.
@@ -114,7 +116,7 @@ builds GUI and CLI executables sharing one Python runtime. It tests the extracte
 archive from a directory with spaces outside the checkout. macOS signatures are
 checked after extraction. Build checks use only temporary settings and libraries.
 
-The frozen checks instantiate the actual desktop and media dialog, require
+The frozen checks instantiate the actual desktop, media and background dialogs, require
 native drag and drop, exercise SQLite scanning, FLAC tags, JPEG resizing and
 verified backups, and check CLI help/version dispatch and HTTPS certificate data.
 If FFmpeg is installed, they also perform and verify a real audio conversion.

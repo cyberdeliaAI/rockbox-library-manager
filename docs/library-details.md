@@ -56,3 +56,21 @@ response. **Download update** opens that release page; choose the package for
 your system and follow the [standalone guide](native-builds.md). The application
 does not replace itself or install software automatically. Existing settings
 and backups keep their established locations.
+
+## Artist and album background
+
+Select an artist or album in the library and choose **Background information…**.
+Opening the window makes no online request. Choose **Fetch background** to send
+only the displayed artist/album names to TheAudioDB; music files, local paths,
+API credentials and library contents are not uploaded. **View source** opens the
+validated TheAudioDB page in your browser.
+
+Descriptions are English, read-only plain text. Exact artist/title matching
+retains accents, punctuation and edition text; ambiguous results are not picked
+silently. An edition title without an exact provider match can have no result.
+The separate `background.sqlite3` cache is local to the existing application-data
+directory, with owner-only permissions on creation on POSIX. Successful text is
+cached for 30 days, misses for one day; cached payloads are bounded to 5,000
+entries and 20 MiB. A failed request has a one-minute retry delay. Background
+lookup never runs as part of scanning, opening album details or editing tags.
+It does not write music files, artwork, folders or the player database.
