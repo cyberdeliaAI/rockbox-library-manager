@@ -37,19 +37,22 @@ int sim_get_os_path(char *buffer, const char *path, size_t bufsize)
 {
     /* The upstream normalizer appends its own slash after sim_root_dir.
      * Windows drive roots arrive as F:/; avoid F:// bypassing the mapping. */
-    const char *original_root = sim_root_dir;
-    size_t root_length = rlm_root_len();
-    char normalized_root[SIM_TMPBUF_MAX_PATH];
-    if (root_length >= sizeof(normalized_root))
+    static char normalized_root[SIM_TMPBUF_MAX_PATH];
+    if (sim_root_dir != normalized_root)
     {
-        errno = ENAMETOOLONG;
-        return -1;
+        size_t root_length = rlm_root_len();
+        if (root_length >= sizeof(normalized_root))
+        {
+            errno = ENAMETOOLONG;
+            return -1;
+        }
+        memcpy(normalized_root, sim_root_dir, root_length);
+        normalized_root[root_length] = '\0';
+        /* One player per process. Static storage remains valid if soundscan
+         * longjmps out of a decoder fault; never leave a stack pointer here. */
+        sim_root_dir = normalized_root;
     }
-    memcpy(normalized_root, original_root, root_length);
-    normalized_root[root_length] = '\0';
-    sim_root_dir = normalized_root;
     int rc = rlm_original_os_path(buffer, path, bufsize);
-    sim_root_dir = original_root;
     if (rc > 1) /* Only the selected player's primary volume is supported. */
     {
         errno = ENXIO;
