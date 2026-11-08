@@ -25,6 +25,7 @@ def run(args):
         from PIL import Image
         from rockbox_manager import __version__, gui, media_tools, tags, updates
         from rockbox_manager.album_dialog import AlbumDialog
+        from rockbox_manager.info_dialog import InformationDialog
         from rockbox_manager import database_dialog, tag_editor, picker  # noqa: F401
         from rockbox_manager.media_dialog import MediaDialog
         from rockbox_manager.library import FastLibraryScanner
@@ -71,6 +72,21 @@ def run(args):
                 if details.running or len(details.tree.get_children()) != 1 or details.data.tracks[0].value("title") != "Test Track":
                     raise RuntimeError("Bundled album details failed")
                 details.close()
+                class PublicTextReply:
+                    def json(self, url, params, ttl):
+                        return {"album": [{"strArtist": "Test Artist", "strAlbum": "Test Album", "idAlbum": "123",
+                                           "strDescription": "<p>Bundle background check.</p>"}]}
+
+                app.online_information.http = PublicTextReply()
+                information = InformationDialog(app, "album", "Test Artist", "Test Album")
+                information.fetch_btn.invoke()
+                deadline = time.monotonic() + 15
+                while information.running and time.monotonic() < deadline:
+                    root.update()
+                    time.sleep(.01)
+                if information.running or "Bundle background check." not in information.text.get("1.0", "end"):
+                    raise RuntimeError("Bundled public background lookup failed")
+                information.close()
 
                 class ReleaseReply:
                     status_code = 200
@@ -134,7 +150,7 @@ def run(args):
                 result = {"ok": True, "version": __version__, "frozen": True,
                           "tk": root.tk.call("info", "patchlevel"), "tkdnd": root.TkdndVersion,
                           "ffmpeg_checked": bool(ffmpeg), "platform": sys.platform,
-                          "album_details_checked": True, "update_ui_checked": True}
+                          "album_details_checked": True, "update_ui_checked": True, "background_checked": True}
             finally:
                 if app is not None:
                     for job in root.tk.splitlist(root.tk.call("after", "info")):

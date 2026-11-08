@@ -69,6 +69,8 @@ except Exception:
 
 from . import __version__ as APP_VERSION
 from .album_dialog import AlbumDialog
+from .info_dialog import InformationDialog
+from .online_info import OnlineInformation
 from .updates import UpdateChecker
 from .common import (APP_NAME, EXCLUDED_DIRS, IS_MAC, MOD, MOD_LABEL, USER_AGENT, anchor_crop_square,  # noqa: F401
                      download_image, format_bytes, humanize_age, is_url, load_image, open_in_file_manager, to_rgb)
@@ -366,6 +368,7 @@ class ArtworkApp:
         self.update_checker = UpdateChecker(self._read_update_cache, self._write_update_cache)
         self._update_running = False
         self._update_result = self.update_checker.check(enabled=False)
+        self.online_information = OnlineInformation(local_app_dir() / "background.sqlite3")
         self.selected_health_issue_id: Optional[int] = None
 
         zoom = int(self.config.get("zoom") or ZOOM_DEFAULT)
@@ -697,6 +700,8 @@ class ArtworkApp:
         self.edit_tags_btn.pack(fill="x", pady=(7, 0))
         self.album_details_btn = ttk.Button(self.detail_body, text="Album details…", command=self.open_album_details)
         self.album_details_btn.pack(fill="x", pady=(7, 0))
+        self.background_btn = ttk.Button(self.detail_body, text="Background information…", command=self.open_background)
+        self.background_btn.pack(fill="x", pady=(7, 0))
         self.detail_hint = tk.Label(self.detail_body, text="", bg=C["panel"], fg=C["faint"], font=self.F.tiny,
                                     anchor="w", justify="left", wraplength=P)
         self.detail_hint.pack(fill="x", pady=(8, 0))
@@ -1488,6 +1493,16 @@ class ArtworkApp:
             existing.win.lift()
             return
         self._album_dialog = AlbumDialog(self, folder, item.artist, item.album)
+
+    def open_background(self) -> None:
+        item = self.db.get_item(self.selected_item_id or -1)
+        if item is None:
+            return
+        existing = getattr(self, "_information_dialog", None)
+        if existing is not None and existing.alive():
+            existing.win.lift()
+            return
+        self._information_dialog = InformationDialog(self, item.kind, item.artist, item.album if item.kind == "album" else "")
 
     def set_view(self, view: str) -> None:
         self.view = view
@@ -3168,6 +3183,9 @@ class ArtworkApp:
         dialog = getattr(self, "_album_dialog", None)
         if dialog is not None and dialog.alive():
             dialog.close()
+        information = getattr(self, "_information_dialog", None)
+        if information is not None and information.alive():
+            information.close()
         self.thumbs.shutdown()
         self.root.destroy()
 
