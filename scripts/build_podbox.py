@@ -121,7 +121,7 @@ def build(source: Path, destination: Path, *, prepared=False):
     s = autoconf.read_text()
     # No simulator threads are run; SDL's read/write scheduling shim is unwanted.
     import re
-    s = re.sub(r"^#define HAVE_(?:SDL_THREADS|UNIXCONTEXT|WIN32_FIBER).*$", "", s, flags=re.M)
+    s = re.sub(r"^#define HAVE_SDL_THREADS.*$", "", s, flags=re.M)
     s = re.sub(r"^#define GCCNUM\s*$", "#define GCCNUM 0", s, flags=re.M)
     autoconf.write_text(s)
     makefile = builddir / "Makefile"
@@ -140,6 +140,11 @@ def build(source: Path, destination: Path, *, prepared=False):
           "rlm-codecs: " + " ".join(f"$(RBCODEC_BLD)/codecs/{c}.codec" for c in CODECS) + "\n")
     makefile.write_text(s)
     run(["make", "-j4", "rlm-headers", "rlm-codecs"], builddir)
+    # genlang embeds its POSIX build path. Native MinGW cannot resolve /d/...
+    # inside a C #include; the build root is already on every helper's -I path.
+    language_header = builddir / "lang/lang.h"
+    language_header.write_text(re.sub(r'#include "[^"\n]*[/\\]lang_enum\.h"',
+                                      '#include "lang_enum.h"', language_header.read_text()))
     destination.mkdir(parents=True, exist_ok=True)
     compiler = "clang" if mac else "gcc"
     opt = "-O2 -DDEFAULT_STACK_SIZE=16384" + (" -D_FORTIFY_SOURCE=0" if mac else "")
@@ -182,6 +187,7 @@ def build(source: Path, destination: Path, *, prepared=False):
                 if path.is_file() and path.suffix in (".h", ".c"):
                     archive.add(path, arcname="podbox/" + path.relative_to(source).as_posix())
         archive.add(autoconf, arcname="podbox/build-sim-ipodvideo/autoconf.h")
+        archive.add(builddir / "lang_enum.h", arcname="podbox/build-sim-ipodvideo/lang_enum.h")
         archive.add(makefile, arcname="podbox/build-sim-ipodvideo/Makefile.reference")
         archive.add(Path(__file__), arcname="rlm/scripts/build_podbox.py")
         archive.add(ROOT / "scripts/native/podbox_overlay.c", arcname="rlm/scripts/native/podbox_overlay.c")
