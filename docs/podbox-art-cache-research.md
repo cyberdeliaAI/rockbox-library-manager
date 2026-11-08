@@ -38,6 +38,11 @@ The C tool walks an existing player database. It does not create the database
 for newly added music. The upstream tool requires that the matching firmware
 has booted at least once and that a database exists.
 
+`aa_run_pass()` also visits indexed books and the people/audiobook artwork pass
+before deciding whether coverage is complete and removing orphan thumbnails.
+A music-only implementation must preserve those other caches and cannot claim
+global completion or perform the native full-pass orphan cleanup for them.
+
 The current direct database editor here deliberately supports TCH v16 files
 under `.rockbox`; its `_rb()`/`snapshot()` do not implement the newer PodBox
 `.rockbox/library/database` location. Cache work must therefore add a separate,
