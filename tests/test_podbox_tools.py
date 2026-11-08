@@ -203,6 +203,23 @@ class NativePodBoxTests(unittest.TestCase):
         self.assertEqual(pb.manifest(self.device / "Music"), music)
         self.assertGreaterEqual(len(list(self.backups.glob("*/manifest.json"))), 3)
 
+    def test_music_changed_during_device_staging_prevents_swap(self):
+        plan = self.preview()
+        original = pb.manifest(self.library)
+        copy = pb._copy_tree
+        def change_after_staging(source, destination, **kwargs):
+            copy(source, destination, **kwargs)
+            if destination.name.startswith(".rlm-library-stage-"):
+                path = self.album / "01.flac"
+                stat = path.stat()
+                os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 2_000_000_000))
+        with patch.object(pb, "_copy_tree", side_effect=change_after_staging):
+            with self.assertRaisesRegex(pb.PodBoxError, "changed while staging"):
+                pb.apply(plan, self.backups)
+        self.assertEqual(pb.manifest(self.library), original)
+        self.assertIn("recovered", pb.recover(self.device))
+        self.assertEqual(pb.manifest(self.library), original)
+
     def test_unknown_layout_target_cancel_and_damaged_backup_fail_without_writes(self):
         cancel = threading.Event()
         cancel.set()

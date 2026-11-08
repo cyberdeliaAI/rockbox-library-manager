@@ -1,12 +1,19 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Native onedir GUI and CLI builds sharing one bundled Python runtime."""
 import os
+import re
 import sys
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_submodules
 
 from rockbox_manager import __version__
+
+version_match = re.fullmatch(r"(\d+\.\d+\.\d+)(?:(?:b|-beta\.)(\d+))?", __version__)
+if version_match is None:
+    raise RuntimeError("Unsupported native application version")
+release_version, beta = version_match.groups()
+bundle_version = release_version + ("b" + beta if beta else "")
 
 root = Path(SPECPATH)
 assets = root / "build" / "assets"
@@ -42,5 +49,7 @@ collection = COLLECT(gui, [(Path(cli.name).name, cli.name, "EXECUTABLE")],
                      a.binaries, a.datas, name="Rockbox Library Manager", upx=False)
 if sys.platform == "darwin":
     app = BUNDLE(collection, name="Rockbox Library Manager.app", icon=icon,
-                 bundle_identifier="nl.cyberdelia.rockbox-library-manager", version=__version__,
-                 info_plist={"CFBundleShortVersionString": __version__, "NSHighResolutionCapable": True})
+                 bundle_identifier="nl.cyberdelia.rockbox-library-manager", version=bundle_version,
+                 info_plist={"CFBundleShortVersionString": release_version,
+                             "CFBundleGetInfoString": "Rockbox Library Manager " + __version__,
+                             "NSHighResolutionCapable": True})

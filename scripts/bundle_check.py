@@ -2,6 +2,7 @@
 """Exercise frozen dependencies and the real desktop against temporary data only."""
 import json
 import os
+import plistlib
 import shutil
 import sys
 import tempfile
@@ -34,6 +35,13 @@ def run(args):
         from rockbox_manager.podbox_dialog import PodBoxDialog
         from rockbox_manager.eq_dialog import EqDialog
         from rockbox_manager.library import FastLibraryScanner
+
+        if sys.platform == "darwin":
+            info = plistlib.loads((Path(sys.executable).parent.parent / "Info.plist").read_bytes())
+            expected_short = __version__.split("-beta.")[0].split("b")[0]
+            if (info.get("CFBundleShortVersionString") != expected_short
+                    or info.get("CFBundleVersion") != __version__.replace("-beta.", "b")):
+                raise RuntimeError("Mac bundle version does not match the application release/beta")
 
         if not Path(certifi.where()).is_file():
             raise RuntimeError("Bundled HTTPS certificates are missing")
