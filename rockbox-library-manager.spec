@@ -51,5 +51,6 @@ if sys.platform == "darwin":
     app = BUNDLE(collection, name="Rockbox Library Manager.app", icon=icon,
                  bundle_identifier="nl.cyberdelia.rockbox-library-manager", version=bundle_version,
                  info_plist={"CFBundleShortVersionString": release_version,
+                             "CFBundleVersion": bundle_version,
                              "CFBundleGetInfoString": "Rockbox Library Manager " + __version__,
                              "NSHighResolutionCapable": True})

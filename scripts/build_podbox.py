@@ -22,7 +22,14 @@ CODECS = ("flac", "wav", "mpa", "aac", "vorbis", "opus", "alac", "aiff", "wavpac
 
 
 def run(args, cwd):
-    subprocess.run(list(map(str, args)), cwd=cwd, check=True)
+    args = list(map(str, args))
+    executable = shutil.which(args[0])
+    if not executable:
+        raise RuntimeError(f"Required native build tool is missing: {args[0]}")
+    # CreateProcess searches System32 before PATH; bare bash can select WSL
+    # instead of MSYS2 even inside the correct MinGW shell.
+    args[0] = executable
+    subprocess.run(args, cwd=cwd, check=True)
 
 
 def replace(path, old, new):
