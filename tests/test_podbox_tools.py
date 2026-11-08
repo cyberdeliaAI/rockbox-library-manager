@@ -38,6 +38,16 @@ def make_player(base):
 
 
 class PodBoxValidationTests(unittest.TestCase):
+    def test_missing_master_is_not_mistaken_for_an_empty_new_database(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            library = Path(tmp) / "library"
+            folder = library / "database"
+            folder.mkdir(parents=True)
+            self.assertIsNone(pb._database(library))
+            (folder / "database_0.tcd").write_bytes(b"unfinished existing data")
+            with self.assertRaisesRegex(pb.PodBoxError, "no master"):
+                pb._database(library)
+
     def test_crc_matches_non_reflected_reference_and_empty_format(self):
         self.assertEqual(pb.libfile_crc(b"123456789"), 0x0376E6E7)
         self.assertEqual(pb.libfile_crc(b""), 0xFFFFFFFF)

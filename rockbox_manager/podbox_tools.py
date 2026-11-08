@@ -129,6 +129,8 @@ def validate_format(library):
 def _database(library):
     folder = library / "database"
     if not (folder / database.MASTER).exists():
+        if folder.is_dir() and any(p.name.startswith("database_") for p in folder.iterdir()):
+            raise PodBoxError("Existing PodBox database files have no master. Finish recovery on the player before building.")
         return None
     paths = [p for p in folder.iterdir() if database.DB_NAME.fullmatch(p.name)]
     if sum(p.stat().st_size for p in paths) > database.MAX_TOTAL_BYTES:
