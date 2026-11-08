@@ -122,7 +122,7 @@ def main():
         with tarfile.open(archive, "w:gz") as output:
             output.add(ROOT / "dist" / "app" / "Rockbox Library Manager", arcname="Rockbox Library Manager")
     # Test the distributed archive, from a path with spaces outside the checkout.
-    with tempfile.TemporaryDirectory(prefix="rlm extracted bundle ") as directory:
+    with tempfile.TemporaryDirectory(prefix="rlm extracted bundle Björk 日本語 ") as directory:
         extracted = Path(directory)
         if sys.platform == "darwin":
             subprocess.run(["ditto", "-x", "-k", str(archive), str(extracted)], check=True, env=plain_environment())

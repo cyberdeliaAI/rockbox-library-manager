@@ -145,13 +145,17 @@ def build(source: Path, destination: Path, *, prepared=False):
     language_header = builddir / "lang/lang.h"
     language_header.write_text(re.sub(r'#include "[^"\n]*[/\\]lang_enum\.h"',
                                       '#include "lang_enum.h"', language_header.read_text()))
+    if windows:
+        # The firmware filesystem expects UTF-8. Give argv, getenv, LoadLibraryA
+        # and host stdio the same process code page, including non-ASCII roots.
+        run(["windres", "-i", "podbox.rc", "-o", builddir / "rlm_utf8.o"], ROOT / "scripts/native")
     destination.mkdir(parents=True, exist_ok=True)
     compiler = "clang" if mac else "gcc"
     opt = "-O2 -DDEFAULT_STACK_SIZE=16384" + (" -D_FORTIFY_SOURCE=0" if mac else "")
     for name in ("database_pb", "artcache_pb", "soundscan"):
         args = ["make", "-C", f"tools/{name}", "win" if windows else "native", f"OPT={opt}"]
         if windows:
-            args += ["WINCC=gcc", "SIMDIR=../../build-sim-ipodvideo"]
+            args += ["WINCC=gcc ../../build-sim-ipodvideo/rlm_utf8.o", "SIMDIR=../../build-sim-ipodvideo"]
         else:
             args += [f"CC={compiler}"]
         if mac and name != "soundscan":
@@ -191,6 +195,8 @@ def build(source: Path, destination: Path, *, prepared=False):
         archive.add(makefile, arcname="podbox/build-sim-ipodvideo/Makefile.reference")
         archive.add(Path(__file__), arcname="rlm/scripts/build_podbox.py")
         archive.add(ROOT / "scripts/native/podbox_overlay.c", arcname="rlm/scripts/native/podbox_overlay.c")
+        for name in ("podbox.rc", "podbox.manifest"):
+            archive.add(ROOT / "scripts/native" / name, arcname="rlm/scripts/native/" + name)
     print(f"Built PodBox engines and {len(CODECS)} matching host codecs in {destination}")
 
 
