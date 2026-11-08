@@ -46,6 +46,9 @@ Screenshots from version 1.1.0-beta.1 on Windows.
   filter missing titles/genres, possible duplicates and unreadable tracks.
 - Find possible gaps and same-disc numbered title matches in Library Health.
   Gaps require a complete album read; use **Check every track** for larger albums.
+- Open **Background information…** for an artist biography or album background
+  from TheAudioDB. Fetching is explicit, uses exact identities and caches English
+  text locally; it never changes music, artwork or tags.
 - Check for newer stable versions through **Settings → Application updates**.
   Automatic startup checks are optional and off by default; **Check now** works
   independently. Downloads open in your browser.
@@ -352,6 +355,11 @@ to a release. See the [native build guide](docs/native-builds.md).
 album, possible duplicate-track and incomplete-album health checks, and optional
 GitHub update notifications. Existing scanning, tag editing and artwork behavior
 are retained. See [album details, health and updates](docs/library-details.md).
+
+**Version 1.4.0** retains the Tk interface and adds explicit artist/album
+background information. Official macOS downloads use Developer ID signing and
+Apple notarization, verified after extraction. See the
+[signing guide](docs/code-signing.md) and [CHANGELOG](CHANGELOG.md).
 
 ## Credits and origins
 

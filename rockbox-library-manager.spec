@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Native onedir GUI and CLI builds sharing one bundled Python runtime."""
+import os
 import sys
 from pathlib import Path
 
@@ -22,11 +23,12 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 suffix = ".exe" if sys.platform == "win32" else ""
+identity = os.environ.get("RLM_CODESIGN_IDENTITY") if sys.platform == "darwin" else None
 icon = str(assets / ("app.icns" if sys.platform == "darwin" else "app.ico"))
 gui = EXE(pyz, a.scripts, [], exclude_binaries=True, name="Rockbox Library Manager" + suffix,
-          console=False, icon=icon, upx=False)
+          console=False, icon=icon, upx=False, codesign_identity=identity)
 cli = EXE(pyz, a.scripts, [], exclude_binaries=True, name="rockbox-library-manager" + suffix,
-          console=True, icon=icon, upx=False)
+          console=True, icon=icon, upx=False, codesign_identity=identity)
 # Passing the CLI TOC keeps the GUI's bundle settings and main executable.
 collection = COLLECT(gui, [(Path(cli.name).name, cli.name, "EXECUTABLE")],
                      a.binaries, a.datas, name="Rockbox Library Manager", upx=False)
