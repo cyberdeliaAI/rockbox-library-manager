@@ -39,11 +39,12 @@ class PodBoxDialog:
         self.close_btn = ttk.Button(footer, text="Close", command=self.close)
         self.close_btn.pack(side="right")
         tk.Label(body, text="PodBox preparation tools", bg=C["panel"], fg=C["text"], font=app.F.title).pack(anchor="w")
-        tk.Label(body, text="PodBox layout 5 on iPod Video/Classic. Preview runs the player's engines against a local library copy.\n"
+        description = tk.Label(body, text="PodBox layout 5 on iPod Video/Classic. Preview runs the player's engines against a local library copy.\n"
                  "Music is read-only. Installation requires a verified local backup and an unchanged player.\n"
                  "Retained database paths keep play history, ratings and resume positions; a rebuild can renumber rows.\n"
                  "Soundscan measures part of each track (dBFS, tempo and pitch); it does not set ReplayGain or LUFS tags.",
-                 bg=C["panel"], fg=C["muted"], font=app.F.small, justify="left", anchor="w", wraplength=900).pack(fill="x", pady=8)
+                 bg=C["panel"], fg=C["muted"], font=app.F.small, justify="left", anchor="w", wraplength=900)
+        description.pack(fill="x", pady=8)
         self.device_var = tk.StringVar(value=str(device) if device else "")
         row = tk.Frame(body, bg=C["panel"])
         row.pack(fill="x", pady=5)
@@ -82,6 +83,13 @@ class PodBoxDialog:
         self.text.pack(fill="both", expand=True)
         self.device_var.trace_add("write", lambda *_: self.invalidate())
         self.operation.trace_add("write", lambda *_: self.invalidate())
+        body.bind("<Configure>", lambda event: [label.configure(wraplength=max(1, event.width - 36))
+                                               for label in (description, self.status)])
+        self.win.update_idletasks()
+        width = min(self.win.winfo_screenwidth() - 80, max(1000, self.win.winfo_reqwidth()))
+        chrome = self.win.winfo_height() - self.text.winfo_height()
+        height = min(self.win.winfo_screenheight() - 80, max(740, chrome + 140))
+        self.win.geometry(f"{width}x{height}")
 
     def invalidate(self):
         if self.plan:

@@ -32,9 +32,10 @@ class EqDialog:
         self.export_btn.state(["disabled"])
         ttk.Button(footer, text="Close", command=self.close).pack(side="right")
         tk.Label(body, text="EQ Refit", font=app.F.title, bg=C["panel"], fg=C["text"]).pack(anchor="w")
-        tk.Label(body, text="Fit fewer active bands using PodBox's optimiser. The original preset is preserved.\n"
+        description = tk.Label(body, text="Fit fewer active bands using PodBox's optimiser. The original preset is preserved.\n"
                  "Curves are a numerical approximation at the selected sample rate; listening/device results can differ.",
-                 font=app.F.small, bg=C["panel"], fg=C["muted"], justify="left", wraplength=800).pack(fill="x", pady=8)
+                 font=app.F.small, bg=C["panel"], fg=C["muted"], justify="left", wraplength=800)
+        description.pack(fill="x", pady=8)
         self.path = tk.StringVar()
         row = tk.Frame(body, bg=C["panel"])
         row.pack(fill="x", pady=5)
@@ -44,11 +45,11 @@ class EqDialog:
         controls = tk.Frame(body, bg=C["panel"])
         controls.pack(fill="x", pady=8)
         self.bands, self.tolerance, self.rate = tk.StringVar(value="5"), tk.StringVar(value="1.0"), tk.StringVar(value="44100")
-        for label, variable, values in (("Maximum bands", self.bands, tuple(map(str, range(1, 10)))),
+        for index, (label, variable, values) in enumerate((("Maximum bands", self.bands, tuple(map(str, range(1, 10)))),
                                          ("Weighted tolerance (dB)", self.tolerance, ("0.5", "1.0", "2.0")),
-                                         ("Sample rate", self.rate, ("44100", "48000"))):
-            tk.Label(controls, text=label, bg=C["panel"], fg=C["text"], font=app.F.small).pack(side="left", padx=(0, 5))
-            ttk.Combobox(controls, textvariable=variable, values=values, width=7, state="readonly").pack(side="left", padx=(0, 12))
+                                         ("Sample rate", self.rate, ("44100", "48000")))):
+            tk.Label(controls, text=label, bg=C["panel"], fg=C["text"], font=app.F.small).grid(row=index, column=0, sticky="w", padx=(0, 12), pady=2)
+            ttk.Combobox(controls, textvariable=variable, values=values, width=7, state="readonly").grid(row=index, column=1, sticky="w", pady=2)
         self.preview_btn = ttk.Button(body, text="Preview refit", command=self.preview)
         self.preview_btn.pack(anchor="w")
         self.status = tk.Label(body, text="Choose a ten-slot Rockbox/PodBox EQ .cfg preset.", font=app.F.small,
@@ -57,8 +58,15 @@ class EqDialog:
         self.canvas = tk.Canvas(body, bg=C["input"], highlightthickness=0, height=260)
         self.canvas.pack(fill="both", expand=True)
         self.canvas.bind("<Configure>", lambda _: self.draw())
+        body.bind("<Configure>", lambda event: [label.configure(wraplength=max(1, event.width - 36))
+                                               for label in (description, self.status)])
         for variable in (self.path, self.bands, self.tolerance, self.rate):
             variable.trace_add("write", lambda *_: self.invalidate())
+        self.win.update_idletasks()
+        width = min(self.win.winfo_screenwidth() - 80, max(900, self.win.winfo_reqwidth()))
+        chrome = self.win.winfo_height() - self.canvas.winfo_height()
+        height = min(self.win.winfo_screenheight() - 80, max(660, chrome + 160))
+        self.win.geometry(f"{width}x{height}")
 
     def close(self):
         if self.running:

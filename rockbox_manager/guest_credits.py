@@ -20,8 +20,16 @@ def name_key(value: str) -> str:
     return value.strip(" \t").translate(_LOWER)
 
 
+class KnownArtists(frozenset):
+    """Normalize once per album view, rather than once per track/render."""
+    def __new__(cls, values=()):
+        return super().__new__(cls, (name_key(value) for value in values))
+
+
 def guest_names(text: str, known_artists=()) -> list[str]:
     """Return at most eight bounded guest names from the first credit marker."""
+    if len(text) > 4096:
+        return []  # Prose heuristics must not make large metadata block the UI.
     text = text.split("\0", 1)[0]
     match = _MARKER.search(text)
     if match is None:
@@ -43,7 +51,7 @@ def guest_names(text: str, known_artists=()) -> list[str]:
         if pos >= 0:
             end = pos
     rest = text[match.end():end]
-    known = {name_key(value) for value in known_artists}
+    known = known_artists if isinstance(known_artists, KnownArtists) else KnownArtists(known_artists)
     out, rejected = [], 0
     while len(out) < 8 and rejected < 8:
         cut = None

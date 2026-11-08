@@ -130,8 +130,10 @@ def _database(library):
     folder = library / "database"
     if not (folder / database.MASTER).exists():
         return None
-    return database.TagDatabase.parse({p.name: p.read_bytes() for p in folder.iterdir()
-                                       if database.DB_NAME.fullmatch(p.name)})
+    paths = [p for p in folder.iterdir() if database.DB_NAME.fullmatch(p.name)]
+    if sum(p.stat().st_size for p in paths) > database.MAX_TOTAL_BYTES:
+        raise PodBoxError("The database exceeds the supported parser limit (512 MiB).")
+    return database.TagDatabase.parse({p.name: database._read_regular(p) for p in paths})
 
 
 def _runtime(db):
@@ -172,12 +174,12 @@ def _inventory(device, cancel):
         directories[:] = sorted(d for d in directories
                                 if d.casefold() not in {"system volume information", "$recycle.bin", ".trashes", ".fseventsd", ".spotlight-v100"}
                                 and not d.startswith(".rlm-library-")
-                                and (Path(root) / d).relative_to(device).as_posix() != ".rockbox/library")
+                                and (Path(root) / d).relative_to(device).as_posix().casefold() != ".rockbox/library")
         for name in directories + names:
             path = Path(root) / name
             relative = path.relative_to(device).as_posix()
-            if (relative in (".rockbox/.rockbox-library-manager.lock", ".rockbox/._.rockbox-library-manager.lock")
-                    or (path.parent == device / ".rockbox" and (name.startswith("._.rlm-library-")
+            if (relative.casefold() in (".rockbox/.rockbox-library-manager.lock", ".rockbox/._.rockbox-library-manager.lock")
+                    or (path.parent.relative_to(device).as_posix().casefold() == ".rockbox" and (name.startswith("._.rlm-library-")
                         or JOURNAL in name))):
                 continue
             if path.is_symlink():
@@ -257,7 +259,9 @@ def _execute(engine, device, overlay, work, offset, cancel, progress):
     text = log.read_text(encoding="utf-8", errors="replace").replace("\r", "\n")
     if process.returncode:
         raise PodBoxError(f"The native engine stopped ({process.returncode}). The player was not changed.\n{text[-8000:]}")
-    return text[-32_000:]
+    if len(text) > 32_000:
+        return "[Showing the last 32,000 characters; full report: " + str(log) + "]\n" + text[-32_000:]
+    return text
 
 
 def _validate_outputs(library, operation, before, after):
