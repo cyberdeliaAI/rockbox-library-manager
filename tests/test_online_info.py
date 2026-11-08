@@ -5,6 +5,7 @@ import sqlite3
 import tempfile
 import time
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -73,11 +74,11 @@ class OnlineInformationTests(unittest.TestCase):
     def test_stale_or_invalid_cached_values_are_not_shown(self):
         self.http.json.return_value = {"artists": [self.row]}
         self.store.get("artist", "Björk")
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             data = json.loads(db.execute("SELECT data FROM background").fetchone()[0])
             db.execute("UPDATE background SET data=?", (json.dumps({**data, "url": "https://evil.example/"}),))
         self.assertFalse(self.store.get("artist", "Björk")["cached"])
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("UPDATE background SET expires_at=?", (time.time() - 1,))
         self.assertFalse(self.store.get("artist", "Björk")["cached"])
         self.assertEqual(self.http.json.call_count, 3)
@@ -87,7 +88,7 @@ class OnlineInformationTests(unittest.TestCase):
             for number in range(5):
                 self.http.json.return_value = {"artists": [{**self.row, "strArtist": str(number)}]}
                 self.store.get("artist", str(number))
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM background").fetchone()[0], 2)
         self.http.json.return_value = {"artists": [self.row]}
         with patch.object(self.store, "_db", side_effect=sqlite3.OperationalError("read only")):
