@@ -62,6 +62,13 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+Artist/album background identity matching and HTML-to-text handling in
+`rockbox_manager/online_info.py` are adapted from Tagcast 1.6.5. The macOS
+signing verification in `scripts/macos_signing.py` follows Tagcast's tested
+Developer ID/notarization workflow, adapted for this application's PyInstaller
+GUI and CLI. Both adapted files retain the upstream MIT notice above their
+implementation; the notice reproduced above also applies.
+
 ## Rockbox and other contributors
 
 PodBox builds on [Rockbox](https://www.rockbox.org/) and other projects credited

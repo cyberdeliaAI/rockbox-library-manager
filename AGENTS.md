@@ -30,6 +30,8 @@ and updates to an existing Rockbox database.
   and writing; `tag_editor.py`: review and save UI.
 - `album_details.py` / `album_dialog.py`: on-demand, read-only track details;
   `track_checks.py`: shared disc-scoped metadata matches and complete-list gaps.
+- `online_info.py` / `info_dialog.py`: explicit, read-only TheAudioDB background
+  text, exact identities and bounded private local cache; never fetch on opening.
 - `updates.py`: optional public stable-release checks and a daily attempt cache;
   GUI integration uses background workers and the UI queue.
 - `artwork_engine.py`: folder/tag matching, artwork retrieval, candidate
@@ -133,3 +135,9 @@ Run from the repository root:
   validation jobs, the dedicated tap deploy key in the publishing job, and
   concurrent-edit/downgrade safeguards. Manual retries must not create releases
   or modify unrelated casks. See `docs/native-builds.md` for credential rotation.
+
+- `scripts/macos_signing.py` signs official Mac builds through a temporary
+  keychain and Apple notarization. Keep credentials out of installation/freezing
+  and runtime children. Release signing is mandatory for the new recipe; ordinary
+  PR builds remain ad-hoc. Preserve extracted app/CLI/team/hardened-runtime,
+  stapled-ticket and Gatekeeper checks plus archive-bound publication evidence.
