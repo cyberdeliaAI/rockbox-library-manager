@@ -1,0 +1,344 @@
+{
+  "source": "PodBox f0850c4647e7c1cfde11ffc89ab40b55f8aa5635 tools/dbfeat/dbfeat.c (GPL-2.0-or-later)",
+  "known": [
+    "Florence and the Machine",
+    "Nick Cave & the Bad Seeds",
+    "Nick Cave",
+    "Earth, Wind & Fire",
+    "AC/DC",
+    "Drake",
+    "Rihanna",
+    "Kylie Minogue",
+    "Jay-Z",
+    "Tyler, The Creator",
+    "Guest One",
+    "Guest Two"
+  ],
+  "cases": [
+    {
+      "text": "Song (feat. Guest One)",
+      "expected": [
+        "Guest One"
+      ]
+    },
+    {
+      "text": "Song (Feat. Guest One)",
+      "expected": [
+        "Guest One"
+      ]
+    },
+    {
+      "text": "Song (FEAT. Guest One)",
+      "expected": [
+        "Guest One"
+      ]
+    },
+    {
+      "text": "Song (ft. Guest One)",
+      "expected": [
+        "Guest One"
+      ]
+    },
+    {
+      "text": "Song ft Guest One",
+      "expected": [
+        "Guest One"
+      ]
+    },
+    {
+      "text": "Song featuring Guest One",
+      "expected": [
+        "Guest One"
+      ]
+    },
+    {
+      "text": "Song w/ Guest One",
+      "expected": [
+        "Guest One"
+      ]
+    },
+    {
+      "text": "Song f/ Guest One",
+      "expected": [
+        "Guest One"
+      ]
+    },
+    {
+      "text": "Song (feat: Guest One)",
+      "expected": [
+        "Guest One"
+      ]
+    },
+    {
+      "text": "Song (ft:Guest One)",
+      "expected": [
+        "Guest One"
+      ]
+    },
+    {
+      "text": "Song (duet with Guest One)",
+      "expected": [
+        "Guest One"
+      ]
+    },
+    {
+      "text": "Song (Duet With Guest One)",
+      "expected": [
+        "Guest One"
+      ]
+    },
+    {
+      "text": "Song duet w/ Guest One",
+      "expected": [
+        "Guest One"
+      ]
+    },
+    {
+      "text": "Song (feat.Guest One)",
+      "expected": [
+        "Guest One"
+      ]
+    },
+    {
+      "text": "feat. Guest One",
+      "expected": [
+        "Guest One"
+      ]
+    },
+    {
+      "text": "Artist A feat. Artist B",
+      "expected": [
+        "Artist B"
+      ]
+    },
+    {
+      "text": "Defeat the Silence",
+      "expected": []
+    },
+    {
+      "text": "Feather Light",
+      "expected": []
+    },
+    {
+      "text": "Soft Machine",
+      "expected": []
+    },
+    {
+      "text": "Aftermath",
+      "expected": []
+    },
+    {
+      "text": "Song with a Broken Heart",
+      "expected": []
+    },
+    {
+      "text": "Song w/o Vocals",
+      "expected": []
+    },
+    {
+      "text": "Song (Duet Version)",
+      "expected": []
+    },
+    {
+      "text": "Half/Life",
+      "expected": []
+    },
+    {
+      "text": "",
+      "expected": []
+    },
+    {
+      "text": "Song (feat. Guest One) [Remastered]",
+      "expected": [
+        "Guest One"
+      ]
+    },
+    {
+      "text": "Song [feat. Guest One] (Live)",
+      "expected": [
+        "Guest One"
+      ]
+    },
+    {
+      "text": "Song (Remix feat. Guest One)",
+      "expected": [
+        "Guest One"
+      ]
+    },
+    {
+      "text": "Song (feat. Guest One) (feat. Guest Two)",
+      "expected": [
+        "Guest One"
+      ]
+    },
+    {
+      "text": "Song (feat. Guest One (Live))",
+      "expected": [
+        "Guest One"
+      ]
+    },
+    {
+      "text": "Song feat. Guest One",
+      "expected": [
+        "Guest One"
+      ]
+    },
+    {
+      "text": "Song feat. Guest One (Live)",
+      "expected": [
+        "Guest One"
+      ]
+    },
+    {
+      "text": "Song (feat. Drake & Rihanna)",
+      "expected": [
+        "Drake",
+        "Rihanna"
+      ]
+    },
+    {
+      "text": "Song (feat. Drake, Rihanna)",
+      "expected": [
+        "Drake",
+        "Rihanna"
+      ]
+    },
+    {
+      "text": "Song (feat. Drake; Rihanna)",
+      "expected": [
+        "Drake",
+        "Rihanna"
+      ]
+    },
+    {
+      "text": "Song (feat. Drake x Rihanna)",
+      "expected": [
+        "Drake",
+        "Rihanna"
+      ]
+    },
+    {
+      "text": "Song (feat. Jay-Z + Kylie Minogue)",
+      "expected": [
+        "Jay-Z",
+        "Kylie Minogue"
+      ]
+    },
+    {
+      "text": "Song (feat. Guest One & Guest Two)",
+      "expected": [
+        "Guest One",
+        "Guest Two"
+      ]
+    },
+    {
+      "text": "Song (feat. Drake, Rihanna & Jay-Z)",
+      "expected": [
+        "Drake",
+        "Rihanna",
+        "Jay-Z"
+      ]
+    },
+    {
+      "text": "Song (feat. Florence and the Machine)",
+      "expected": [
+        "Florence and the Machine"
+      ]
+    },
+    {
+      "text": "Song (feat. AC/DC)",
+      "expected": [
+        "AC/DC"
+      ]
+    },
+    {
+      "text": "Song (feat. Earth, Wind & Fire)",
+      "expected": [
+        "Earth, Wind & Fire"
+      ]
+    },
+    {
+      "text": "Song (feat. Nick Cave & the Bad Seeds)",
+      "expected": [
+        "Nick Cave & the Bad Seeds"
+      ]
+    },
+    {
+      "text": "Song (feat. Drake & Nick Cave & the Bad Seeds)",
+      "expected": [
+        "Drake",
+        "Nick Cave & the Bad Seeds"
+      ]
+    },
+    {
+      "text": "Song (feat. Nick Cave & the Bad Seeds & Drake)",
+      "expected": [
+        "Nick Cave & the Bad Seeds",
+        "Drake"
+      ]
+    },
+    {
+      "text": "Song (feat. Unknown One, Unknown Two)",
+      "expected": [
+        "Unknown One",
+        "Unknown Two"
+      ]
+    },
+    {
+      "text": "Song (feat. Drake, Unknown Two)",
+      "expected": [
+        "Drake",
+        "Unknown Two"
+      ]
+    },
+    {
+      "text": "Song (feat. Tyler, The Creator)",
+      "expected": [
+        "Tyler, The Creator"
+      ]
+    },
+    {
+      "text": "Song (feat. Tyler, The Creator & Drake)",
+      "expected": [
+        "Tyler, The Creator",
+        "Drake"
+      ]
+    },
+    {
+      "text": "Song (feat. Drake & Tyler, The Creator)",
+      "expected": [
+        "Drake",
+        "Tyler, The Creator"
+      ]
+    },
+    {
+      "text": "Song (feat. Some Band & Co)",
+      "expected": [
+        "Some Band",
+        "Co"
+      ]
+    },
+    {
+      "text": "Song (feat. )",
+      "expected": []
+    },
+    {
+      "text": "Song (feat. A)",
+      "expected": []
+    },
+    {
+      "text": "Song (feat. A & B)",
+      "expected": []
+    },
+    {
+      "text": "Song (feat. Drake & A)",
+      "expected": [
+        "Drake"
+      ]
+    },
+    {
+      "text": "Song (feat. Aaaaaaaaaa Bbbbbbbbbb Cccccccccc Dddddddddd Eeeeeeeeee Ffffffffff Gggg)",
+      "expected": []
+    }
+  ]
+}

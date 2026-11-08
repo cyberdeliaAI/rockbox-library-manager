@@ -43,6 +43,14 @@ and updates to an existing Rockbox database.
   and artwork replacement, backups, and UI.
 - `rockbox_database.py` / `database_dialog.py`: binary database parsing,
   preview, backup, update, recovery, and UI.
+- `podbox_tools.py` / `podbox_dialog.py`: separate layout-5 PodBox preparation,
+  native local previews, complete-library backups, journaled installation/recovery.
+  `scripts/build_podbox.py` and `scripts/native/podbox_overlay.c` build pinned
+  engines and matching host codecs. Native engines may write only to the local
+  overlay. Preserve the original conservative database updater separately.
+- `_eq_refit.py` / `eq_tools.py` / `eq_dialog.py`: PodBox numerical fitter,
+  reviewed curves/errors and new-file preset export; preserve source presets.
+  `guest_credits.py`: read-only prose heuristics in Album details, never tag writes.
 - `common.py`, `ui_theme.py`, and `widgets.py`: shared utilities and UI components.
 - `tests/`: unit and real Tk dialog tests, with a FLAC fixture.
 - `README.md`, `docs/media-preparation.md`, and `docs/rockbox-database.md`:
@@ -55,6 +63,7 @@ pattern and operation-lock coordination when modifying background operations.
 
 - Support Python 3.10 and later on Windows, macOS, and Linux.
 - Required packages: `mutagen>=1.48`, `Pillow>=12.0`, `requests>=2.33`.
+  EQ fitting additionally requires `numpy>=1.26` (included in requirements).
   Tkinter must be available; `tkinterdnd2` is optional.
 - FFmpeg is an external dependency for FLAC conversion. Artwork processing
   and scanning must remain usable without FFmpeg.
@@ -100,6 +109,11 @@ pattern and operation-lock coordination when modifying background operations.
   Do not broaden format support or guess missing track mappings implicitly.
 - Database restore does not undo music tag edits or folder moves. Backups are
   retained without automatic deletion.
+- PodBox preparation supports initialized layout 5, iPod Video/Classic, TCH v16,
+  artwork format 8 and sound index v3/64-byte records. Preserve player paths,
+  reviewed output, unchanged inputs and retained-path runtime verification.
+  Never guess Linux's implicit FAT timezone; require explicit mount options.
+  Soundscan uses partial audio, dBFS and unknown mtime zero, without music writes.
 
 ## Verification
 
@@ -126,6 +140,10 @@ Run from the repository root:
   dependencies installed to build and verify an extracted package. Preserve
   archive symlinks, signing integrity, license notices and version/tag checks;
   see `docs/native-builds.md` and `.github/workflows/builds.yml`.
+- Build the pinned engines before freezing; see `docs/podbox-tools.md`. Run
+  `RLM_TEST_OVERLAY_PROBE=1 python -m unittest discover -s tests -p test_podbox_tools.py -v`
+  against temporary fixtures. Preserve the actual C overlay denial probe and
+  extracted native decoder checks, and ship the adapted corresponding source.
 - Report tests actually executed, skips, and missing prerequisites. Do not
   equate lint success or mocked checks with full player compatibility.
 
