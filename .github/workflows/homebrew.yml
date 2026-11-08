@@ -104,6 +104,9 @@ jobs:
           tap_parent="$(brew --repository)/Library/Taps/cyberdeliaai"
           mkdir -p "$tap_parent"
           ln -s "$GITHUB_WORKSPACE" "$tap_parent/homebrew-apps"
+          if brew help trust >/dev/null 2>&1; then
+            brew trust --cask cyberdeliaAI/apps/rockbox-library-manager
+          fi
       - name: Check cask definition
         run: |
           brew style Casks/rockbox-library-manager.rb
