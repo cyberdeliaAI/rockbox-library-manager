@@ -10,6 +10,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from .eq_tools import export_refit, preview_refit
 from .ui_theme import C
+from .widgets import ScrollFrame
 
 
 class EqDialog:
@@ -23,14 +24,21 @@ class EqDialog:
         self.win.transient(app.root)
         self.win.grab_set()
         self.win.protocol("WM_DELETE_WINDOW", self.close)
-        body = tk.Frame(self.win, bg=C["panel"], padx=18, pady=18)
-        body.pack(fill="both", expand=True)
-        footer = tk.Frame(body, bg=C["panel"])
+        outer = tk.Frame(self.win, bg=C["panel"], padx=18, pady=18)
+        outer.pack(fill="both", expand=True)
+        footer = tk.Frame(outer, bg=C["panel"])
         footer.pack(side="bottom", fill="x", pady=(12, 0))
         self.export_btn = ttk.Button(footer, text="Export new preset…", command=self.export)
         self.export_btn.pack(side="left")
         self.export_btn.state(["disabled"])
         ttk.Button(footer, text="Close", command=self.close).pack(side="right")
+        # Reserve the curve and export actions. Long status text or large fonts
+        # scroll in the form instead of squeezing the graph out of a small screen.
+        self.canvas = tk.Canvas(outer, bg=C["input"], highlightthickness=0, height=200)
+        self.canvas.pack(side="bottom", fill="x", pady=(8, 0))
+        self.form = ScrollFrame(outer, C["panel"], app._register_scrollable)
+        self.form.pack(fill="both", expand=True)
+        body = self.form.inner
         tk.Label(body, text="EQ Refit", font=app.F.title, bg=C["panel"], fg=C["text"]).pack(anchor="w")
         description = tk.Label(body, text="Fit fewer active bands using PodBox's optimiser. The original preset is preserved.\n"
                  "Curves are a numerical approximation at the selected sample rate; listening/device results can differ.",
@@ -55,8 +63,6 @@ class EqDialog:
         self.status = tk.Label(body, text="Choose a ten-slot Rockbox/PodBox EQ .cfg preset.", font=app.F.small,
                                bg=C["panel"], fg=C["text"], justify="left", anchor="w", wraplength=800)
         self.status.pack(fill="x", pady=10)
-        self.canvas = tk.Canvas(body, bg=C["input"], highlightthickness=0, height=260)
-        self.canvas.pack(fill="both", expand=True)
         self.canvas.bind("<Configure>", lambda _: self.draw())
         body.bind("<Configure>", lambda event: [label.configure(wraplength=max(1, event.width - 36))
                                                for label in (description, self.status)])
@@ -72,6 +78,7 @@ class EqDialog:
         if self.running:
             messagebox.showinfo("EQ Refit", "Wait for the fitting operation to finish.", parent=self.win)
             return
+        self.app._scrollables.pop(str(self.form.canvas), None)
         self.win.destroy()
 
     def alive(self):

@@ -63,7 +63,9 @@ jobs:
         run: choco install ffmpeg --yes --no-progress
       - name: Install FFmpeg (macOS)
         if: runner.os == 'macOS'
-        run: brew install ffmpeg sdl2
+        run: |
+          brew install ffmpeg
+          brew install sdl2
       - name: Check out pinned PodBox engine source
         if: hashFiles('scripts/build_podbox.py') != ''
         uses: actions/checkout@v4
