@@ -40,6 +40,8 @@ jobs:
     env:
       RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag || '' }}
       RLM_REQUIRE_FFMPEG: "1"
+      RLM_TEST_OVERLAY_PROBE: "1"
+      MACOSX_DEPLOYMENT_TARGET: ${{ matrix.target == 'macos-arm64' && '11.0' || matrix.target == 'macos-x64' && '10.13' || '' }}
       SIGN_MACOS: ${{ startsWith(matrix.target, 'macos-') && (github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && (inputs.sign_macos || inputs.tag != ''))) && '1' || '' }}
     steps:
       - uses: actions/checkout@v4
@@ -50,15 +52,43 @@ jobs:
           python-version: "3.13"
       - name: Install build dependencies
         run: python -m pip install -r requirements-build.txt "ruff>=0.11,<1"
+      - name: Preserve macOS compatibility for NumPy
+        if: runner.os == 'macOS' && hashFiles('scripts/prepare_macos_numpy.py') != ''
+        run: python scripts/prepare_macos_numpy.py
       - name: Install FFmpeg and display (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg xvfb python3-tk
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg xvfb python3-tk build-essential perl libsdl2-dev
       - name: Install FFmpeg (Windows)
         if: runner.os == 'Windows'
         run: choco install ffmpeg --yes --no-progress
       - name: Install FFmpeg (macOS)
         if: runner.os == 'macOS'
-        run: brew install ffmpeg
+        run: brew install ffmpeg sdl2
+      - name: Check out pinned PodBox engine source
+        if: hashFiles('scripts/build_podbox.py') != ''
+        uses: actions/checkout@v4
+        with:
+          repository: anthonyfletcher/podbox
+          ref: f0850c4647e7c1cfde11ffc89ab40b55f8aa5635
+          path: build/podbox-source
+          persist-credentials: false
+      - name: Set up Windows native compiler
+        if: runner.os == 'Windows' && hashFiles('scripts/build_podbox.py') != ''
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: make perl mingw-w64-x86_64-gcc mingw-w64-x86_64-python mingw-w64-x86_64-SDL2
+      - name: Build PodBox engines and host codecs (Windows)
+        if: runner.os == 'Windows' && hashFiles('scripts/build_podbox.py') != ''
+        shell: msys2 {0}
+        run: python scripts/build_podbox.py --source build/podbox-source
+      - name: Build PodBox engines and host codecs
+        if: runner.os != 'Windows' && hashFiles('scripts/build_podbox.py') != ''
+        run: python scripts/build_podbox.py --source build/podbox-source
+      - name: Verify native PodBox operations and recovery on temporary fixtures
+        if: hashFiles('scripts/build_podbox.py') != ''
+        run: python -m unittest discover -s tests -p test_podbox_tools.py -v
       - name: Lint
         run: python -m ruff check rockbox_manager tests scripts
       - name: Build and verify extracted downloads (Linux)

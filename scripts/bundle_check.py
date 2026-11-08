@@ -5,6 +5,8 @@ import os
 import shutil
 import sys
 import tempfile
+import struct
+import wave
 import threading
 import time
 import traceback
@@ -28,6 +30,9 @@ def run(args):
         from rockbox_manager.info_dialog import InformationDialog
         from rockbox_manager import database_dialog, tag_editor, picker  # noqa: F401
         from rockbox_manager.media_dialog import MediaDialog
+        from rockbox_manager import podbox_tools, eq_tools
+        from rockbox_manager.podbox_dialog import PodBoxDialog
+        from rockbox_manager.eq_dialog import EqDialog
         from rockbox_manager.library import FastLibraryScanner
 
         if not Path(certifi.where()).is_file():
@@ -87,6 +92,45 @@ def run(args):
                 if information.running or "Bundle background check." not in information.text.get("1.0", "end"):
                     raise RuntimeError("Bundled public background lookup failed")
                 information.close()
+
+                # The distributed, signed helpers/codecs must work after extraction,
+                # including dlopen under macOS hardened runtime. All writes target
+                # this temporary fixture; never discover or auto-select a player.
+                player = base / "Player"
+                player_library = player / ".rockbox/library"
+                player_library.mkdir(parents=True)
+                (player_library.parent / "rockbox-info.txt").write_text("Target: ipodvideo\n")
+                (player_library / "format.dat").write_bytes(struct.pack("<IHHIiiiI", 0x544F594C, 5, 1, 0, -1, -1, -1, 0xFFFFFFFF))
+                player_music = player / "Music/Artist/Album"
+                player_music.mkdir(parents=True)
+                shutil.copyfile(audio, player_music / "01.flac")
+                shutil.copyfile(album / "folder.jpg", player_music / "folder.jpg")
+                with wave.open(str(player_music / "02.wav"), "wb") as wav:
+                    wav.setparams((1, 2, 44100, 0, "NONE", "not compressed"))
+                    wav.writeframes(b"\0\0" * 44100 * 55)
+                for operation in ("update", "artwork", "soundscan"):
+                    before = podbox_tools.manifest(player)
+                    plan = podbox_tools.preview(player, operation, base / "previews", timestamp_offset=0)
+                    if not plan.changes or podbox_tools.manifest(player) != before:
+                        raise RuntimeError(f"Frozen PodBox {operation} preview failed or changed its source")
+                    podbox_tools.apply(plan, base / "podbox-backups")
+                    plan.discard()
+                raw = (player_library / "sound.dat").read_bytes()
+                if len(raw) < 80 or raw[16 + 39] < 39 or raw[16 + 40] & 8:
+                    raise RuntimeError("Frozen native soundscan did not decode and analyse the WAV fixture")
+                podbox_dialog = PodBoxDialog(app, player, base / "Config", lambda _: None)
+                root.update()
+                podbox_dialog.close()
+                preset = base / "test.cfg"
+                preset.write_text("eq low shelf filter: 60, 7, 50\neq peak filter 1: 250, 10, 20\n"
+                                  "eq high shelf filter: 14000, 7, -40\n")
+                eq_plan = eq_tools.preview_refit(preset, max_bands=2, tolerance=2.0, restarts=1)
+                eq_tools.export_refit(eq_plan, base / "refit.cfg")
+                eq_dialog = EqDialog(app)
+                eq_dialog.plan = eq_plan
+                root.update()
+                eq_dialog.draw()
+                eq_dialog.close()
 
                 class ReleaseReply:
                     status_code = 200
@@ -151,6 +195,7 @@ def run(args):
                           "tk": root.tk.call("info", "patchlevel"), "tkdnd": root.TkdndVersion,
                           "ffmpeg_checked": bool(ffmpeg), "platform": sys.platform,
                           "album_details_checked": True, "update_ui_checked": True, "background_checked": True}
+                result.update(podbox_engines_checked=True, native_audio_checked=True, eq_refit_checked=True)
             finally:
                 if app is not None:
                     for job in root.tk.splitlist(root.tk.call("after", "info")):

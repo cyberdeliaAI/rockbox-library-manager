@@ -9,6 +9,7 @@ from tkinter import ttk
 from .album_details import AlbumDetails, duration_text, read_album
 from .sources import strip_accents
 from .track_checks import position
+from .guest_credits import track_guests
 from .ui_theme import C
 
 
@@ -56,7 +57,7 @@ class AlbumDialog:
                   selectforeground=[("readonly", C["text"])])
         self.filter_box = ttk.Combobox(controls, textvariable=self.filter_var, state="readonly", width=23,
                                      style="Album.TCombobox",
-                                     values=("All tracks", "Missing title", "Missing genre", "Possible duplicates", "Unreadable tracks"))
+                                     values=("All tracks", "Missing title", "Missing genre", "Possible duplicates", "Unreadable tracks", "Guest credits"))
         self.filter_box.pack(side="left", padx=(8, 0))
         self.search_var.trace_add("write", lambda *_: self.render())
         self.filter_var.trace_add("write", lambda *_: self.render())
@@ -124,6 +125,7 @@ class AlbumDialog:
             self.status.configure(text="Read cancelled.")
             return
         self.data = result
+        self.known_artists = {item.artist for item in self.app.db.physical_items("artist")}
         self.folder = result.folder or self.folder
         durations = [t.duration for t in result.tracks if t.duration is not None]
         discs = {position(t.value("discnumber")) for t in result.tracks}
@@ -145,7 +147,8 @@ class AlbumDialog:
         for index, track in enumerate(self.data.tracks):
             keep = {"All tracks": True, "Missing title": not track.value("title"),
                     "Missing genre": not track.value("genre"), "Possible duplicates": track.path in duplicate_paths,
-                    "Unreadable tracks": bool(track.error)}[self.filter_var.get()]
+                    "Unreadable tracks": bool(track.error),
+                    "Guest credits": bool(track_guests(track.values, getattr(self, "known_artists", ())))}[self.filter_var.get()]
             blob = strip_accents(" ".join([str(track.path), track.format, *[v for values in track.values.values() for v in values]])).casefold()
             if not keep or not all(word in blob for word in words):
                 continue
@@ -165,6 +168,11 @@ class AlbumDialog:
         if selection:
             track = self.data.tracks[int(selection[0])]
             lines += [str(track.path.relative_to(self.folder)), "Composer: " + (track.value("composer") or "—")]
+            guests = track_guests(track.values, getattr(self, "known_artists", ()))
+            if guests:
+                lines.append("Suggested guest credits: " + "; ".join(guests))
+                lines.append("Inferred from title/artist text; unknown band names can be split incorrectly. "
+                             "Review these suggestions yourself. No tags are changed.")
             if track.error:
                 lines.append("Could not read: " + track.error)
             lines += [issue["details"] for issue in self.data.issues if track.path in issue["paths"]]

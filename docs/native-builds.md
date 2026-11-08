@@ -105,6 +105,8 @@ not a cross-compiler. Build dependencies are separate from runtime requirements:
 
 ```sh
 python -m pip install -r requirements-build.txt
+# Build the pinned native engines first; see docs/podbox-tools.md.
+python scripts/build_podbox.py --source /path/to/disposable/pinned/podbox
 python scripts/build_app.py
 ```
 
@@ -121,6 +123,10 @@ native drag and drop, exercise SQLite scanning, FLAC tags, JPEG resizing and
 verified backups, and check CLI help/version dispatch and HTTPS certificate data.
 If FFmpeg is installed, they also perform and verify a real audio conversion.
 CI requires that FFmpeg check to run; FFmpeg is still not included in downloads.
+The new PodBox checks additionally exercise actual native database/artwork engines,
+decode and analyse a WAV through the bundled host codec, and export a numerical EQ
+refit. Helpers and `.codec` libraries are part of Mac signing/notarization. Their
+adapted corresponding source and original notices ship under `licenses/PodBox`.
 No player or live artwork provider is used by these checks.
 
 ## GitHub Actions and publishing

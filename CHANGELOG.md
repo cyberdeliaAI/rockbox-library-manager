@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.5.0
+
+- Add separate PodBox preparation tools using pinned player engines: build/update
+  or rebuild the layout-5 database, prepare format-8 artwork caches and run
+  soundscan with matching host codecs. Keep the existing Rockbox tag updater.
+- Run native previews in a local library overlay. The C filesystem adapter denies
+  all source/player mutations. Review the resulting files before installation;
+  verify local backups, unchanged inputs, output formats and retained runtime data.
+- Stage complete library installations, journal the directory swap, recover
+  interrupted swaps and restore verified backups. Music files are never changed.
+- Freeze the FAT mount offset for previews. Verify the Mac adapter against raw
+  winter/summer FAT directory timestamps; Linux database/artwork writes require
+  an explicit FAT mount timezone. Soundscan records unknown mtime as zero.
+- Add EQ Refit with curve/error/precut review and exclusive export to a new preset,
+  preserving originals, comments, unrelated settings and line endings. Add NumPy.
+- Add read-only guest-credit suggestions and an Album details filter, porting
+  PodBox's known-artist parser and its 56 fixed reference cases.
+- Bundle native engines/codecs and corresponding adapted source; exercise them
+  after extraction alongside existing GUI/CLI/signing/Homebrew verification.
+
 ## 1.4.0
 
 - Keep the existing Tk interface and add explicit, read-only artist biographies and

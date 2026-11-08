@@ -1,5 +1,6 @@
 mutagen>=1.48
 Pillow>=12.0
 requests>=2.33
+numpy>=1.26
 # Optional for drag-and-drop support:
 # tkinterdnd2

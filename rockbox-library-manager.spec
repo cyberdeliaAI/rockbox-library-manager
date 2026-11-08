@@ -13,10 +13,18 @@ assets = root / "build" / "assets"
 data = [(str(root / name), ".") for name in ("LICENSE", "CREDITS.md", "README.md")]
 data += [(str(root / "docs"), "docs"), (str(assets / "licenses"), "licenses")]
 data += [(str(root / "tests" / "fixtures" / "silence.flac"), "build-check")]
+native = root / "build/podbox"
+if not (native / "engine.json").is_file() or not (native / "source.tar.gz").is_file():
+    raise RuntimeError("Build the pinned PodBox engines with scripts/build_podbox.py before freezing.")
+data += [(str(native / "engine.json"), "podbox"), (str(native / "source.tar.gz"), "licenses/PodBox")]
+binaries = [(str(path), "podbox/codecs") for path in (native / "codecs").glob("*.codec")]
+binaries += [(str(native / (name + (".exe" if sys.platform == "win32" else ""))), "podbox")
+             for name in ("database_pb", "artcache_pb", "soundscan")]
 a = Analysis(
     [str(root / "scripts" / "frozen_entry.py")],
     pathex=[str(root)],
     datas=data,
+    binaries=binaries,
     # ImageTk loads its Tk library finder dynamically on Linux.
     hiddenimports=collect_submodules("mutagen") + ["PIL._tkinter_finder"],
     hookspath=[str(root / "scripts" / "hooks")],
