@@ -1,5 +1,8 @@
 # PodBox artwork-cache feasibility
 
+Historical research before 1.5.0-beta.1. The implementation and current
+constraints are documented in [PodBox preparation tools](podbox-tools.md).
+
 Research snapshot: 2026-11-08, PodBox commit
 [`f0850c4`](https://github.com/anthonyfletcher/podbox/tree/f0850c4647e7c1cfde11ffc89ab40b55f8aa5635).
 This records implementation research, not an enabled cache writer or a claim
