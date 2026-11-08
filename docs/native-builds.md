@@ -20,7 +20,7 @@ do not move only the executable. macOS bundles likewise need their complete
 Contents directory. macOS ZIPs and Linux tarballs preserve PyInstaller's
 symbolic links.
 
-Builds are checked on Windows Server 2022, macOS 14 (Apple Silicon), macOS 15
+Builds are checked on Windows Server 2022, macOS 15 (Apple Silicon), macOS 15
 (Intel) and Ubuntu 22.04 (x86-64). Linux needs a graphical desktop and compatible
 system libraries, including glibc 2.35 or later; it is not a universal Linux
 binary. Other OS versions are not part of this native build matrix.
