@@ -31,7 +31,7 @@ jobs:
         include:
           - os: windows-2022
             target: windows-x64
-          - os: macos-14
+          - os: macos-15
             target: macos-arm64
           - os: macos-15-intel
             target: macos-x64
