@@ -19,7 +19,7 @@ class PodBoxDialog:
         self.running, self.plan = False, None
         self.cancel = threading.Event()
         self.win = tk.Toplevel(app.root)
-        self.win.title("PodBox preparation tools")
+        self.win.title("Rockbox preparation tools")
         self.win.geometry("1000x740")
         self.win.minsize(800, 600)
         self.win.configure(bg=C["panel"])
@@ -30,7 +30,7 @@ class PodBoxDialog:
         body.pack(fill="both", expand=True)
         footer = tk.Frame(body, bg=C["panel"])
         footer.pack(side="bottom", fill="x", pady=(12, 0))
-        self.apply_btn = ttk.Button(footer, text="Back up and install preview…", command=self.apply, style="Accent.TButton")
+        self.apply_btn = ttk.Button(footer, text="Back up and install prepared files…", command=self.apply, style="Accent.TButton")
         self.apply_btn.pack(side="left")
         self.apply_btn.state(["disabled"])
         self.cancel_btn = ttk.Button(footer, text="Cancel preview", command=self.cancel.set)
@@ -38,8 +38,9 @@ class PodBoxDialog:
         self.cancel_btn.state(["disabled"])
         self.close_btn = ttk.Button(footer, text="Close", command=self.close)
         self.close_btn.pack(side="right")
-        tk.Label(body, text="PodBox preparation tools", bg=C["panel"], fg=C["text"], font=app.F.title).pack(anchor="w")
+        tk.Label(body, text="Rockbox preparation tools", bg=C["panel"], fg=C["text"], font=app.F.title).pack(anchor="w")
         description = tk.Label(body, text="PodBox layout 5 on iPod Video/Classic. Preview runs the player's engines against a local library copy.\n"
+                 "Installation reuses the prepared files; it does not rerun the engine. Input checks, backup and file verification still take time.\n"
                  "Music is read-only. Installation requires a verified local backup and an unchanged player.\n"
                  "Retained database paths keep play history, ratings and resume positions; a rebuild can renumber rows.\n"
                  "Soundscan measures part of each track (dBFS, tempo and pitch); it does not set ReplayGain or LUFS tags.",
@@ -102,7 +103,7 @@ class PodBoxDialog:
 
     def close(self):
         if self.running:
-            messagebox.showinfo("PodBox tools", "Wait for completion before closing or disconnecting. A preview can be cancelled.", parent=self.win)
+            messagebox.showinfo("Rockbox tools", "Wait for completion before closing or disconnecting. A preview can be cancelled.", parent=self.win)
             return
         self.invalidate()
         self.win.destroy()
@@ -161,10 +162,11 @@ class PodBoxDialog:
         if isinstance(result, Exception):
             self.status.configure(text="Operation stopped. See details below.")
             self.show_text(str(result))
-            self.app.log_app(f"PodBox tools: {result}")
+            self.app.log_app(f"Rockbox tools: {result}")
         elif isinstance(result, tools.PodBoxPlan):
             self.plan = result
-            self.status.configure(text=f"Preview complete: {len(result.changes)} changed library files. The player has not been changed.")
+            self.status.configure(text=f"Preview complete: {len(result.changes)} changed library files. The player has not been changed.\n"
+                                  "Installation reuses these prepared files; no second engine run is needed.")
             changes = [f"{'Remove' if p not in result.after else 'Add' if p not in result.before else 'Replace'}: {p}" for p in result.changes]
             self.show_text("\n".join(changes or ["No changes needed."]) + "\n\nNative engine report:\n" + result.output
                            + f"\n\nFrozen FAT mount offset: {result.offset // 60:+d} minutes.\n"
@@ -175,33 +177,35 @@ class PodBoxDialog:
             self.invalidate()
             self.status.configure(text="Completed. Safely eject and reboot PodBox after installing or restoring.")
             self.show_text(str(result))
-            self.app.log_app(f"PodBox tools: {kind} completed; {result}")
+            self.app.log_app(f"Rockbox tools: {kind} completed; {result}")
 
     def preview(self):
         if self.running:
             return
         self.invalidate()
         device, operation = Path(self.device_var.get()), self.operation.get()
-        self.run("Preparing PodBox preview", lambda: tools.preview(device, operation, self.local_dir / "podbox-previews",
+        self.run("Preparing Rockbox tools preview", lambda: tools.preview(device, operation, self.local_dir / "podbox-previews",
                  cancel=self.cancel, progress=self.progress), cancellable=True)
 
     def apply(self):
         plan = self.plan
         if not plan or not plan.changes:
             return
-        if not messagebox.askyesno("Install PodBox preview",
+        if not messagebox.askyesno("Install Rockbox tools preview",
                 f"Install this {plan.operation} preview on {plan.device}?\n\n{len(plan.changes)} library files change. "
                 f"A verified complete library backup is required here first:\n{self.backups}\n\n"
+                "The prepared files are reused without rerunning the engine. Checking inputs, copying the complete library "
+                "and verifying files can take time.\n\n"
                 "Keep the player connected until completion, then safely eject and reboot PodBox.", parent=self.win):
             return
-        self.run("Installing PodBox preview", lambda: tools.apply(plan, self.backups))
+        self.run("Checking inputs, backing up and installing prepared files", lambda: tools.apply(plan, self.backups))
 
     def recover(self):
         device = Path(self.device_var.get())
-        if messagebox.askyesno("Recover PodBox installation", f"Recover the interrupted library installation on {device}?\n"
+        if messagebox.askyesno("Recover Rockbox tools installation", f"Recover the interrupted library installation on {device}?\n"
                               "The verified local backup is checked first. Music is not changed.", parent=self.win):
             self.invalidate()
-            self.run("Recovering PodBox installation", lambda: tools.recover(device))
+            self.run("Recovering Rockbox tools installation", lambda: tools.recover(device))
 
     def restore(self):
         path = filedialog.askopenfilename(parent=self.win, title="Choose a PodBox backup manifest",

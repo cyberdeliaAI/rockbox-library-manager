@@ -946,8 +946,8 @@ class ArtworkApp:
         device_db = self._settings_card(left, "Rockbox database", "Update the iPod database after editing tags, with verified local backups.")
         ttk.Button(device_db, text="Rockbox database…", command=self.open_rockbox_database).pack(anchor="w")
 
-        podbox = self._settings_card(left, "PodBox preparation", "Build/update the PodBox database, prepare the player artwork cache and run soundscan, with local previews and backups.")
-        ttk.Button(podbox, text="PodBox preparation tools…", command=self.open_podbox_tools).pack(anchor="w")
+        podbox = self._settings_card(left, "Rockbox tools", "Build/update the database, prepare the player artwork cache and run soundscan. Requires supported PodBox layout 5; includes local previews and backups.")
+        ttk.Button(podbox, text="Rockbox preparation tools…", command=self.open_podbox_tools).pack(anchor="w")
         eq = self._settings_card(left, "EQ Refit", "Compare EQ response curves and export a new preset with fewer active bands. Guest-credit suggestions are in Album details → Guest credits.")
         ttk.Button(eq, text="EQ Refit…", command=self.open_eq_refit).pack(anchor="w")
 

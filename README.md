@@ -52,7 +52,7 @@ Screenshots from version 1.1.0-beta.1 on Windows.
 - Check for newer stable versions through **Settings → Application updates**.
   Automatic startup checks are optional and off by default; **Check now** works
   independently. Downloads open in your browser.
-- Use **Settings → PodBox preparation tools…** to build/update or rebuild an
+- Use **Settings → Rockbox preparation tools…** to build/update or rebuild an
   initialized PodBox database, prepare its native artwork cache or run soundscan.
   Preview locally, review the actual output, then install with a verified complete
   library backup. The existing Rockbox database tag updater remains separate.
@@ -61,7 +61,7 @@ Screenshots from version 1.1.0-beta.1 on Windows.
 - Filter **Album details… → Guest credits** for read-only suggestions inferred
   from title/artist text. Unknown band names can be split incorrectly; review them.
 
-See [PodBox preparation tools](docs/podbox-tools.md) for supported firmware,
+See [Rockbox preparation tools](docs/podbox-tools.md) for supported firmware,
 codecs, FAT timestamps, source builds, backups and recovery. These new player
 writers target initialized PodBox layout 5 on iPod Video/Classic; general
 Rockbox artwork, health and tagging workflows retain their existing support.
@@ -379,6 +379,10 @@ Apple notarization, verified after extraction. See the
 **Version 1.5.0-beta.1** is a test release adding reviewed PodBox database/artwork/sound preparation,
 new-file EQ refitting and read-only guest-credit suggestions. See the
 [preparation guide](docs/podbox-tools.md) for format and platform requirements.
+
+**Version 1.5.0-beta.2** renames the preparation UI to Rockbox tools and clarifies
+that installation reuses the prepared output. Input checks, complete backups and
+installation verification remain in place; supported player formats are unchanged.
 
 ## Credits and origins
 
