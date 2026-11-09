@@ -82,7 +82,9 @@ class NativePodBoxTests(unittest.TestCase):
 
     def install(self, operation="update"):
         plan = self.preview(operation)
-        pb.apply(plan, self.backups)
+        with patch.object(pb, "_execute", side_effect=AssertionError("Installation must reuse prepared files")):
+            pb.apply(plan, self.backups)
+        self.assertEqual(pb.manifest(self.library), plan.after)
         return plan
 
     def test_create_preview_is_readonly_and_native_unchanged_scan_is_noop(self):
@@ -93,7 +95,9 @@ class NativePodBoxTests(unittest.TestCase):
         db = pb._database(plan.library)
         self.assertEqual({db.text(r, 4) for r in db.rows},
                          {f"/<HDD0>/Music/Artist/Album/0{i}.flac" for i in (1, 2)})
-        backup = pb.apply(plan, self.backups)
+        with patch.object(pb, "_execute", side_effect=AssertionError("Installation must reuse prepared files")):
+            backup = pb.apply(plan, self.backups)
+        self.assertEqual(pb.manifest(self.library), plan.after)
         pb.read_backup(backup, self.device)
         self.assertEqual(self.preview().changes, [])
         self.assertEqual((self.library / "user/player_name.txt").read_text(), "Preserve me")
@@ -155,7 +159,9 @@ class NativePodBoxTests(unittest.TestCase):
             # native RGB565 channel placement rather than Pillow's RGB output.
             self.assertGreaterEqual(pixel >> 11, 28)
             self.assertEqual(pixel & 0x7FF, 0)
-        pb.apply(plan, self.backups)
+        with patch.object(pb, "_execute", side_effect=AssertionError("Installation must reuse prepared files")):
+            pb.apply(plan, self.backups)
+        self.assertEqual(pb.manifest(self.library), plan.after)
         again = self.preview("artwork")
         self.assertFalse(any(p.endswith(".aat") for p in again.changes))
         self.assertIn("0 thumbnails written or removed", again.output)
@@ -177,7 +183,9 @@ class NativePodBoxTests(unittest.TestCase):
         self.assertGreaterEqual(record[39], 39)
         self.assertFalse(record[40] & 8)  # not SOUND_F_FAILED
         self.assertTrue(-1000 < struct.unpack_from("<h", record, 24)[0] < 0)
-        pb.apply(plan, self.backups)
+        with patch.object(pb, "_execute", side_effect=AssertionError("Installation must reuse prepared files")):
+            pb.apply(plan, self.backups)
+        self.assertEqual(pb.manifest(self.library), plan.after)
         self.assertIn("1 already current", self.preview("soundscan").output)
 
     def test_stale_music_configuration_library_and_preview_are_refused(self):

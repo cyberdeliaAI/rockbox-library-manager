@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.5.0-beta.2
+
+Second test release. The stable release and Homebrew channel remain on 1.4.0.
+
+- Rename the preparation tools to Rockbox in Settings and the dialog, retaining
+  the explicit PodBox layout-5 compatibility requirements.
+- Clarify that installation reuses the preview's prepared files without rerunning
+  the native engine; input checks, verified backups and installation checks remain.
+- Verify reuse of prepared database, artwork and soundscan output in the native
+  tests, including rebuilds, without rerunning the engines during installation.
+
 ## 1.5.0-beta.1
 
 First test release of the five PodBox extensions. The stable Homebrew channel

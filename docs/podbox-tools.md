@@ -1,6 +1,6 @@
-# PodBox preparation tools
+# Rockbox preparation tools
 
-Available in **Settings → PodBox preparation tools…**. The existing **Rockbox
+Available in **Settings → Rockbox preparation tools…**. The existing **Rockbox
 database…** tag updater is unchanged and remains a separate operation.
 
 ## Supported player data
@@ -38,11 +38,19 @@ finish/recover on the player first; the new tool refuses to overwrite them.
 4. Review the actual changed file list and native report. A cancelled or failed
    preview never installs anything. Build/update the database before artwork for
    new albums. Separate previews let you review each operation's effects.
-5. **Back up and install preview…** checks unchanged music metadata, library
+5. **Back up and install prepared files…** checks unchanged music metadata, library
    hashes, configuration, timezone and staged output. It creates and verifies a
    complete local library backup, then stages a complete library on the player
    and journals its directory swap. Keep the player connected until completion.
 6. Safely eject and reboot PodBox to load the changes.
+
+Preview performs the actual database, artwork or audio analysis once and keeps
+its output locally. Installation reuses those exact prepared files; it does not
+run the native engine again. It does repeat directory/size/modification-time
+checks for music and reads/hashes library data while checking inputs, verifying
+the backup and staging/verifying the installation. These safety checks and full
+library copies can take time, particularly with a large artwork cache or a slow
+player connection. Music is not decoded or retagged again during installation.
 
 There must be room locally for a preview and retained backups, and on the player
 for a staged library. The library backup limit is 16 GiB / 500,000 files; input
