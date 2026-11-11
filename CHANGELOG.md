@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.5.0
+
+Stable release of the features evaluated in 1.5.0-beta.1 and 1.5.0-beta.2.
+Application behavior is unchanged from beta 2; this release updates the version
+and release documentation.
+
+- Include Rockbox preparation tools for database update/build/rebuild, native
+  artwork-cache preparation and soundscan, with reviewed local output, verified
+  complete-library backups and journaled installation/recovery.
+- Include EQ Refit with new-file preset export and read-only guest-credit
+  suggestions in Album details. Preserve the existing Tk interface and workflows.
+- Keep the explicit PodBox layout-5 and iPod Video/Classic requirements for player
+  preparation. Keep the conservative Rockbox database tag updater separate.
+- Publish Windows x64, Linux x64 and Apple-signed/notarized macOS Apple Silicon
+  and Intel downloads, with checksums and the automatic stable Homebrew update.
+
 ## 1.5.0-beta.2
 
 Second test release. The stable release and Homebrew channel remain on 1.4.0.
