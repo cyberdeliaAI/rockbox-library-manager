@@ -384,6 +384,11 @@ new-file EQ refitting and read-only guest-credit suggestions. See the
 that installation reuses the prepared output. Input checks, complete backups and
 installation verification remain in place; supported player formats are unchanged.
 
+**Version 1.5.0** is the stable release of these five extensions, including the
+Rockbox tools naming and preview/install explanation from beta 2. Application
+behavior is unchanged from beta 2. Native downloads and the Homebrew cask use
+the stable version; the existing Tk interface and other workflows are preserved.
+
 ## Credits and origins
 
 Full credit for **PodBox and the original Rockbox Music Artwork Fetcher** goes to
