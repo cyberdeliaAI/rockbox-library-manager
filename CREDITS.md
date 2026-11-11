@@ -23,6 +23,18 @@ The desktop interface and additional library-management features are maintained
 in this companion project by [cyberdeliaAI](https://github.com/cyberdeliaAI).
 Full credit for the original artwork tool remains with Anthony Fletcher.
 
+The PodBox preparation engines and host codecs are built from the player sources
+at `f0850c4647e7c1cfde11ffc89ab40b55f8aa5635`, including `database_pb`,
+`artcache_pb` and `soundscan`. Their original source/license notices are retained
+in the corresponding-source archive shipped in `licenses/PodBox/source.tar.gz`.
+This project's host adapters enforce the local preview overlay and explicit FAT
+timestamps; these adaptations are marked in the supplied source and build recipe.
+
+`rockbox_manager/_eq_refit.py` adapts Anthony Fletcher's numerical EQ fitter.
+`guest_credits.py` ports his PodBox `db_featured_parse.c`; the 56 fixed parser
+cases are adapted from its `tools/dbfeat` harness. These originate from the same
+pinned PodBox revision and are distributed under GPL v2 with this application.
+
 ## Tagcast
 
 The online sources in [rockbox_manager/sources.py](rockbox_manager/sources.py)

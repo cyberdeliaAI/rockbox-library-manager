@@ -48,7 +48,7 @@ def prepare_assets():
     license_directory.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(python_license, license_directory / "LICENSE.txt")
     for name in ("PyInstaller", "mutagen", "Pillow", "requests", "certifi", "charset-normalizer",
-                 "idna", "urllib3", "tkinterdnd2"):
+                 "idna", "urllib3", "tkinterdnd2", "numpy"):
         dist = metadata.distribution(name)
         versions[name] = dist.version
         for entry in dist.files or []:
@@ -122,7 +122,7 @@ def main():
         with tarfile.open(archive, "w:gz") as output:
             output.add(ROOT / "dist" / "app" / "Rockbox Library Manager", arcname="Rockbox Library Manager")
     # Test the distributed archive, from a path with spaces outside the checkout.
-    with tempfile.TemporaryDirectory(prefix="rlm extracted bundle ") as directory:
+    with tempfile.TemporaryDirectory(prefix="rlm extracted bundle Björk 日本語 ") as directory:
         extracted = Path(directory)
         if sys.platform == "darwin":
             subprocess.run(["ditto", "-x", "-k", str(archive), str(extracted)], check=True, env=plain_environment())
