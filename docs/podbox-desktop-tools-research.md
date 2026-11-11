@@ -1,5 +1,8 @@
 # PodBox desktop tools: implementation research
 
+Historical feasibility review before 1.5.0-beta.1. For the implemented workflows,
+verification and limitations, see [PodBox preparation tools](podbox-tools.md).
+
 Reviewed 2026-11-08 using the actual tool sources, the relevant player routines
 and documentation in [PodBox](https://github.com/anthonyfletcher/podbox/tree/f0850c4647e7c1cfde11ffc89ab40b55f8aa5635/tools).
 This is a feasibility/priority review, not an enabled database, artwork-cache or

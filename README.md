@@ -52,6 +52,19 @@ Screenshots from version 1.1.0-beta.1 on Windows.
 - Check for newer stable versions through **Settings → Application updates**.
   Automatic startup checks are optional and off by default; **Check now** works
   independently. Downloads open in your browser.
+- Use **Settings → Rockbox preparation tools…** to build/update or rebuild an
+  initialized PodBox database, prepare its native artwork cache or run soundscan.
+  Preview locally, review the actual output, then install with a verified complete
+  library backup. The existing Rockbox database tag updater remains separate.
+- Use **Settings → EQ Refit…** to compare response curves and export a new preset
+  with fewer active bands. Originals and precut remain unchanged.
+- Filter **Album details… → Guest credits** for read-only suggestions inferred
+  from title/artist text. Unknown band names can be split incorrectly; review them.
+
+See [Rockbox preparation tools](docs/podbox-tools.md) for supported firmware,
+codecs, FAT timestamps, source builds, backups and recovery. These new player
+writers target initialized PodBox layout 5 on iPod Video/Classic; general
+Rockbox artwork, health and tagging workflows retain their existing support.
 
 ## Install and run
 
@@ -69,6 +82,8 @@ Download the package for your system from
 
 Keep the Windows/Linux executable and its `_internal` folder together.
 Python, Tk, required libraries and drag-and-drop support are bundled.
+The PodBox native engines, nine matching host codecs and their corresponding
+adapted source are also bundled. Soundscan does not require FFmpeg.
 Existing settings and credentials keep their current locations.
 FFmpeg remains optional and separate: install it and select its executable in
 Settings for audio conversion. Scanning and artwork preparation work without it.
@@ -360,6 +375,19 @@ are retained. See [album details, health and updates](docs/library-details.md).
 background information. Official macOS downloads use Developer ID signing and
 Apple notarization, verified after extraction. See the
 [signing guide](docs/code-signing.md) and [CHANGELOG](CHANGELOG.md).
+
+**Version 1.5.0-beta.1** is a test release adding reviewed PodBox database/artwork/sound preparation,
+new-file EQ refitting and read-only guest-credit suggestions. See the
+[preparation guide](docs/podbox-tools.md) for format and platform requirements.
+
+**Version 1.5.0-beta.2** renames the preparation UI to Rockbox tools and clarifies
+that installation reuses the prepared output. Input checks, complete backups and
+installation verification remain in place; supported player formats are unchanged.
+
+**Version 1.5.0** is the stable release of these five extensions, including the
+Rockbox tools naming and preview/install explanation from beta 2. Application
+behavior is unchanged from beta 2. Native downloads and the Homebrew cask use
+the stable version; the existing Tk interface and other workflows are preserved.
 
 ## Credits and origins
 

@@ -1,5 +1,55 @@
 # Changelog
 
+## 1.5.0
+
+Stable release of the features evaluated in 1.5.0-beta.1 and 1.5.0-beta.2.
+Application behavior is unchanged from beta 2; this release updates the version
+and release documentation.
+
+- Include Rockbox preparation tools for database update/build/rebuild, native
+  artwork-cache preparation and soundscan, with reviewed local output, verified
+  complete-library backups and journaled installation/recovery.
+- Include EQ Refit with new-file preset export and read-only guest-credit
+  suggestions in Album details. Preserve the existing Tk interface and workflows.
+- Keep the explicit PodBox layout-5 and iPod Video/Classic requirements for player
+  preparation. Keep the conservative Rockbox database tag updater separate.
+- Publish Windows x64, Linux x64 and Apple-signed/notarized macOS Apple Silicon
+  and Intel downloads, with checksums and the automatic stable Homebrew update.
+
+## 1.5.0-beta.2
+
+Second test release. The stable release and Homebrew channel remain on 1.4.0.
+
+- Rename the preparation tools to Rockbox in Settings and the dialog, retaining
+  the explicit PodBox layout-5 compatibility requirements.
+- Clarify that installation reuses the preview's prepared files without rerunning
+  the native engine; input checks, verified backups and installation checks remain.
+- Verify reuse of prepared database, artwork and soundscan output in the native
+  tests, including rebuilds, without rerunning the engines during installation.
+
+## 1.5.0-beta.1
+
+First test release of the five PodBox extensions. The stable Homebrew channel
+remains on 1.4.0 while this prerelease is evaluated.
+
+- Add separate PodBox preparation tools using pinned player engines: build/update
+  or rebuild the layout-5 database, prepare format-8 artwork caches and run
+  soundscan with matching host codecs. Keep the existing Rockbox tag updater.
+- Run native previews in a local library overlay. The C filesystem adapter denies
+  all source/player mutations. Review the resulting files before installation;
+  verify local backups, unchanged inputs, output formats and retained runtime data.
+- Stage complete library installations, journal the directory swap, recover
+  interrupted swaps and restore verified backups. Music files are never changed.
+- Freeze the FAT mount offset for previews. Verify the Mac adapter against raw
+  winter/summer FAT directory timestamps; Linux database/artwork writes require
+  an explicit FAT mount timezone. Soundscan records unknown mtime as zero.
+- Add EQ Refit with curve/error/precut review and exclusive export to a new preset,
+  preserving originals, comments, unrelated settings and line endings. Add NumPy.
+- Add read-only guest-credit suggestions and an Album details filter, porting
+  PodBox's known-artist parser and its 56 fixed reference cases.
+- Bundle native engines/codecs and corresponding adapted source; exercise them
+  after extraction alongside existing GUI/CLI/signing/Homebrew verification.
+
 ## 1.4.0
 
 - Keep the existing Tk interface and add explicit, read-only artist biographies and

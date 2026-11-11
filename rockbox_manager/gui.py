@@ -806,6 +806,24 @@ class ArtworkApp:
         except Exception as exc:
             messagebox.showerror(APP_NAME, str(exc))
 
+    def open_podbox_tools(self) -> None:
+        if self.operation_lock.locked():
+            return
+        from .podbox_dialog import PodBoxDialog
+        from .rockbox_database import discover_device, DatabaseError
+        music = self._valid_music_root(silent=True)
+        try:
+            device = discover_device(music) if music else None
+        except DatabaseError:
+            device = None
+        self._podbox_dialog = PodBoxDialog(self, device, local_app_dir(), open_in_file_manager)
+
+    def open_eq_refit(self) -> None:
+        if self.operation_lock.locked():
+            return
+        from .eq_dialog import EqDialog
+        self._eq_dialog = EqDialog(self)
+
     def _field_label(self, parent: tk.Misc, text: str, hint: str = "") -> None:
         tk.Label(parent, text=text, bg=C["panel"], fg=C["text"], font=self.F.body_b, anchor="w").pack(fill="x", pady=(8, 0))
         if hint:
@@ -927,6 +945,11 @@ class ArtworkApp:
 
         device_db = self._settings_card(left, "Rockbox database", "Update the iPod database after editing tags, with verified local backups.")
         ttk.Button(device_db, text="Rockbox database…", command=self.open_rockbox_database).pack(anchor="w")
+
+        podbox = self._settings_card(left, "Rockbox tools", "Build/update the database, prepare the player artwork cache and run soundscan. Requires supported PodBox layout 5; includes local previews and backups.")
+        ttk.Button(podbox, text="Rockbox preparation tools…", command=self.open_podbox_tools).pack(anchor="w")
+        eq = self._settings_card(left, "EQ Refit", "Compare EQ response curves and export a new preset with fewer active bands. Guest-credit suggestions are in Album details → Guest credits.")
+        ttk.Button(eq, text="EQ Refit…", command=self.open_eq_refit).pack(anchor="w")
 
         update_card = self._settings_card(right, "Application updates",
             "Check GitHub for a newer stable version. No music, source keys or credentials are sent; downloads are opened in your browser.")
@@ -3166,8 +3189,8 @@ class ArtworkApp:
         self.toast.show(text, "ok" if not failed else "warn", ms=5000)
 
     def on_close(self) -> None:
-        if self._busy_kind in ("rockbox_database", "media"):
-            messagebox.showinfo(APP_NAME, "Wait for the database or media operation to finish before quitting. Media operations can be cancelled in their dialog.")
+        if self._busy_kind in ("rockbox_database", "media", "podbox_tools", "eq_refit"):
+            messagebox.showinfo(APP_NAME, "Wait for the database, media, PodBox or EQ operation to finish before quitting. Cancellable operations can be stopped in their dialog.")
             return
         if self.operation_lock.locked():
             if not messagebox.askyesno(APP_NAME, "A scan or fetch is still running. Quit anyway?"):
@@ -3186,6 +3209,10 @@ class ArtworkApp:
         information = getattr(self, "_information_dialog", None)
         if information is not None and information.alive():
             information.close()
+        for name in ("_podbox_dialog", "_eq_dialog"):
+            preparation = getattr(self, name, None)
+            if preparation is not None and preparation.alive():
+                preparation.close()
         self.thumbs.shutdown()
         self.root.destroy()
 
