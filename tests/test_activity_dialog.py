@@ -26,7 +26,7 @@ class ActivityDialogTests(unittest.TestCase):
 
     def import_log(self):
         path=self.base/".scrobbler.log"
-        path.write_text("#TZ/UTC\n"+log_line(int(time.time())-300,title="Björk 日本語"))
+        path.write_text("#TZ/UTC\n"+log_line(int(time.time())-300,title="Björk 日本語"),encoding="utf-8")
         self.dialog.path.set(str(path))
         self.dialog.preview_log()
         self.wait(lambda: not self.dialog.running)
