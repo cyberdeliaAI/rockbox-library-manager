@@ -824,6 +824,26 @@ class ArtworkApp:
         from .eq_dialog import EqDialog
         self._eq_dialog = EqDialog(self)
 
+    def open_listening_history(self) -> None:
+        if self.operation_lock.locked():
+            return
+        previous = getattr(self, "_listening_dialog", None)
+        if previous is not None and previous.alive():
+            previous.win.lift()
+            return
+        from .activity_dialog import ListeningDialog
+        self._listening_dialog = ListeningDialog(self, local_app_dir())
+
+    def open_audio_integrity(self) -> None:
+        if self.operation_lock.locked():
+            return
+        previous = getattr(self, "_integrity_dialog", None)
+        if previous is not None and previous.alive():
+            previous.win.lift()
+            return
+        from .activity_dialog import IntegrityDialog
+        self._integrity_dialog = IntegrityDialog(self, self._valid_music_root(silent=True), self.ffmpeg_path_var.get().strip())
+
     def _field_label(self, parent: tk.Misc, text: str, hint: str = "") -> None:
         tk.Label(parent, text=text, bg=C["panel"], fg=C["text"], font=self.F.body_b, anchor="w").pack(fill="x", pady=(8, 0))
         if hint:
@@ -950,6 +970,11 @@ class ArtworkApp:
         ttk.Button(podbox, text="Rockbox preparation tools…", command=self.open_podbox_tools).pack(anchor="w")
         eq = self._settings_card(left, "EQ Refit", "Compare EQ response curves and export a new preset with fewer active bands. Guest-credit suggestions are in Album details → Guest credits.")
         ttk.Button(eq, text="EQ Refit…", command=self.open_eq_refit).pack(anchor="w")
+
+        listening = self._settings_card(left, "Listening history", "Import a reviewed .scrobbler.log, view local statistics and export history. Last.fm / ListenBrainz sending is optional and always manual.")
+        ttk.Button(listening, text="Listening history and statistics…", command=self.open_listening_history).pack(anchor="w")
+        integrity = self._settings_card(left, "Audio integrity", "Run a separate, read-only full decode with external FFmpeg. This can take much longer than the normal scan and does not repair or normalize music.")
+        ttk.Button(integrity, text="Check audio integrity…", command=self.open_audio_integrity).pack(anchor="w")
 
         update_card = self._settings_card(right, "Application updates",
             "Check GitHub for a newer stable version. No music, source keys or credentials are sent; downloads are opened in your browser.")
@@ -3189,8 +3214,8 @@ class ArtworkApp:
         self.toast.show(text, "ok" if not failed else "warn", ms=5000)
 
     def on_close(self) -> None:
-        if self._busy_kind in ("rockbox_database", "media", "podbox_tools", "eq_refit"):
-            messagebox.showinfo(APP_NAME, "Wait for the database, media, PodBox or EQ operation to finish before quitting. Cancellable operations can be stopped in their dialog.")
+        if self._busy_kind in ("rockbox_database", "media", "podbox_tools", "eq_refit", "listening_activity"):
+            messagebox.showinfo(APP_NAME, "Wait for the database, media, preparation or listening operation to finish before quitting. Cancellable operations can be stopped in their dialog.")
             return
         if self.operation_lock.locked():
             if not messagebox.askyesno(APP_NAME, "A scan or fetch is still running. Quit anyway?"):
@@ -3209,7 +3234,7 @@ class ArtworkApp:
         information = getattr(self, "_information_dialog", None)
         if information is not None and information.alive():
             information.close()
-        for name in ("_podbox_dialog", "_eq_dialog"):
+        for name in ("_podbox_dialog", "_eq_dialog", "_listening_dialog", "_integrity_dialog"):
             preparation = getattr(self, name, None)
             if preparation is not None and preparation.alive():
                 preparation.close()

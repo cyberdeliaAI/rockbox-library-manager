@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.6.0-beta.1
+
+- Add separate local listening history, reviewed `.scrobbler.log` import, literal
+  search, pagination, statistics and exclusive CSV/JSON export. Unknown log
+  timezones require an explicit historical offset; source logs remain unchanged.
+- Add manual, opt-in Last.fm and ListenBrainz scrobbling with separate private
+  credentials, account-scoped receipts, per-track Last.fm acceptance checks and
+  explicit review/confirmation. Ambiguous requests are held without automatic
+  retries; accepted receipts cannot be cleared by the retry action.
+- Add an explicit read-only audio integrity scan with external FFmpeg, complete
+  audio decoding, cancellation, bounded errors, changed-file detection and report
+  export. Keep normal scans and the existing metadata health checks unchanged.
+- Extend real Tk/unit and extracted-package checks for offline history and full
+  audio decoding. The stable release and Homebrew remain on 1.5.0 during testing.
+
 ## 1.5.0
 
 Stable release of the features evaluated in 1.5.0-beta.1 and 1.5.0-beta.2.

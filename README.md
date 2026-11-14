@@ -68,6 +68,15 @@ Rockbox artwork, health and tagging workflows retain their existing support.
 
 ## Install and run
 
+The **1.6.0 beta** additionally offers **Settings → Listening history and
+statistics…** (reviewed log import, local statistics, CSV/JSON export and optional
+manual Last.fm/ListenBrainz scrobbling) and **Settings → Check audio integrity…**
+(read-only full audio decoding with external FFmpeg). Opening these tools never
+submits listening data. See [listening history and integrity](docs/listening-and-integrity.md)
+for timezone review, account setup, uncertain submissions and scan limitations.
+These beta features are available from the beta release downloads; Homebrew
+continues to install the latest stable version.
+
 ### Standalone downloads (no Python installation)
 
 Download the package for your system from
@@ -388,6 +397,9 @@ installation verification remain in place; supported player formats are unchange
 Rockbox tools naming and preview/install explanation from beta 2. Application
 behavior is unchanged from beta 2. Native downloads and the Homebrew cask use
 the stable version; the existing Tk interface and other workflows are preserved.
+
+**Version 1.6.0-beta.1** adds local listening history/statistics, opt-in scrobbling
+and a separate audio-integrity scan. See the [workflow guide](docs/listening-and-integrity.md).
 
 ## Credits and origins
 

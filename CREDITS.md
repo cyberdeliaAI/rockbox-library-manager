@@ -1,5 +1,11 @@
 # Credits and source attribution
 
+The listening-history, optional scrobbling and audio-integrity additions were
+inspired by [Scrobbox by Roy](https://github.com/RoyLikesAudio/Scrobbox), reviewed
+at commit `592a89f653e8735573bf66eaedf9dd50607d0c8e`. They are independent Python/Tk
+implementations using the portable-player log format and service API documents;
+no Scrobbox source or PyQt UI is included. Existing GPL-2.0-only licensing applies.
+
 Rockbox Library Manager was created as a desktop helper for
 [PodBox](https://github.com/anthonyfletcher/podbox).
 
