@@ -34,6 +34,8 @@ def run(args):
         from rockbox_manager import podbox_tools, eq_tools
         from rockbox_manager.podbox_dialog import PodBoxDialog
         from rockbox_manager.eq_dialog import EqDialog
+        from rockbox_manager.activity_dialog import ListeningDialog, IntegrityDialog
+        from rockbox_manager import listening, integrity
         from rockbox_manager.library import FastLibraryScanner
 
         if sys.platform == "darwin":
@@ -140,6 +142,25 @@ def run(args):
                 eq_dialog.draw()
                 eq_dialog.close()
 
+                history_log = base / ".scrobbler.log"
+                history_log.write_text("#AUDIOSCROBBLER/1.1\n#TZ/UTC\nArtist\tAlbum\tBjörk 日本語\t1\t180\tL\t1700000000\t\n", encoding="utf-8")
+                history = listening.ListeningStore(base / "activity/listening.sqlite3")
+                log_preview = listening.preview_log(history_log)
+                if history.import_preview(log_preview) != 1 or history.import_preview(log_preview) != 0 or history.statistics()["listened"] != 1:
+                    raise RuntimeError("Frozen listening history import/statistics failed")
+                history.export(base / "history.json")
+                history_dialog = ListeningDialog(app, base / "activity")
+                deadline = time.monotonic() + 15
+                while history_dialog.running and time.monotonic() < deadline:
+                    root.update()
+                    time.sleep(.01)
+                if history_dialog.running or history_dialog.enabled.get() or len(history_dialog.tree.get_children()) != 1:
+                    raise RuntimeError("Frozen offline listening history dialog failed")
+                history_dialog.close()
+                integrity_dialog = IntegrityDialog(app, album)
+                root.update()
+                integrity_dialog.close()
+
                 class ReleaseReply:
                     status_code = 200
 
@@ -182,6 +203,9 @@ def run(args):
                 if os.environ.get("RLM_REQUIRE_FFMPEG") == "1" and not ffmpeg:
                     raise RuntimeError("CI must exercise external FFmpeg")
                 if ffmpeg:
+                    checked = integrity.scan(audio, ffmpeg)
+                    if len(checked.items) != 1 or checked.items[0].status != "passed":
+                        raise RuntimeError("Frozen full audio integrity decode failed")
                     high = album / "02.flac"
                     media_tools.run_ffmpeg(ffmpeg, ["-f", "lavfi", "-i", "anullsrc=r=96000:cl=stereo",
                                                    "-t", "0.25", "-sample_fmt", "s32", "-c:a", "flac", str(high)], cancel)
@@ -204,6 +228,7 @@ def run(args):
                           "ffmpeg_checked": bool(ffmpeg), "platform": sys.platform,
                           "album_details_checked": True, "update_ui_checked": True, "background_checked": True}
                 result.update(podbox_engines_checked=True, native_audio_checked=True, eq_refit_checked=True)
+                result.update(listening_history_checked=True, integrity_checked=bool(ffmpeg))
             finally:
                 if app is not None:
                     for job in root.tk.splitlist(root.tk.call("after", "info")):

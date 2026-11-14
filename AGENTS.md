@@ -52,6 +52,10 @@ and updates to an existing Rockbox database.
   reviewed curves/errors and new-file preset export; preserve source presets.
   `guest_credits.py`: read-only prose heuristics in Album details, never tag writes.
 - `common.py`, `ui_theme.py`, and `widgets.py`: shared utilities and UI components.
+- `listening.py`: reviewed portable-player logs, separate private SQLite history,
+  exact-event deduplication, local statistics and export. `scrobbling.py`: explicit
+  account authorization, reviewed submissions and per-account service receipts.
+  `integrity.py`: read-only full FFmpeg decoding; `activity_dialog.py`: Tk tools.
 - `tests/`: unit and real Tk dialog tests, with a FLAC fixture.
 - `README.md`, `docs/media-preparation.md`, and `docs/rockbox-database.md`:
   documented workflows, limitations, and recovery behavior.
@@ -114,6 +118,14 @@ pattern and operation-lock coordination when modifying background operations.
   reviewed output, unchanged inputs and retained-path runtime verification.
   Never guess Linux's implicit FAT timezone; require explicit mount options.
   Soundscan uses partial audio, dBFS and unknown mtime zero, without music writes.
+- Listening import never changes or archives player logs. Unknown timezones need
+  an explicit historical offset. Keep receipts separate from statistics and scope
+  them by service/account; unknown network outcomes must not be auto-retried.
+  Scrobbling is manual and off when its window opens. Keep credentials separate
+  from the existing artwork keys and check Last.fm per-track ignored receipts.
+- Integrity checks are explicit full reads with external FFmpeg, cancellation,
+  bounded diagnostics and source-change detection. They do not repair music,
+  normalize audio or establish its original lossless/mastering quality.
 
 ## Verification
 
